@@ -63,11 +63,15 @@ function getDiscoFileCount(discoId: number): { total_files: number; tif_files: n
   const cached = discoIndexedCountCache.get(discoId);
   if (cached) return cached;
   try {
-    // Fast covering-index count on idx_ficheiros_disco_id / idx_relatorio_ficheiros_disco
+    // Count strictly .TIF and .TIFF files for this disk
     const row = db
-      .prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros WHERE disco_id = ?')
-      .get(discoId) as { c: number } | undefined;
-    const count = row?.c || 0;
+      .prepare(
+        `SELECT COALESCE(SUM(CASE WHEN nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF' THEN 1 ELSE 0 END), 0) as tif_files
+         FROM relatorio_ficheiros
+         WHERE disco_id = ?`
+      )
+      .get(discoId) as { tif_files: number } | undefined;
+    const count = row?.tif_files || 0;
     const val = { total_files: count, tif_files: count };
     discoIndexedCountCache.set(discoId, val);
     return val;
@@ -79,18 +83,12 @@ function getDiscoFileCount(discoId: number): { total_files: number; tif_files: n
 function getTotalIndexedCount(): number {
   if (cachedTotalFicheirosCount !== null) return cachedTotalFicheirosCount;
   try {
-    // O(1) B-tree max(id) check first; if small table (<200k), run exact COUNT(*), else use fast estimate or single count
-    const maxRow = db.prepare('SELECT COALESCE(MAX(id), 0) as m FROM relatorio_ficheiros').get() as
-      | { m: number }
-      | undefined;
-    const maxId = maxRow?.m || 0;
-    if (maxId <= 500000) {
-      const exactRow = db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number } | undefined;
-      cachedTotalFicheirosCount = exactRow?.c || 0;
-    } else {
-      const exactRow = db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number } | undefined;
-      cachedTotalFicheirosCount = exactRow?.c || maxId;
-    }
+    const exactRow = db
+      .prepare(
+        "SELECT COUNT(*) as c FROM relatorio_ficheiros WHERE nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF'"
+      )
+      .get() as { c: number } | undefined;
+    cachedTotalFicheirosCount = exactRow?.c || 0;
     return cachedTotalFicheirosCount;
   } catch {
     return 0;
@@ -295,8 +293,8 @@ export function indexarRelatorio(discoId: number, caminhoCompleto: string): { to
       continue;
     }
 
-    // Check if it has a valid file extension (2 to 5 alphanumeric chars)
-    if (/\.[A-Za-z0-9]{2,5}$/.test(rawName)) {
+    // Index strictly .TIF and .TIFF files
+    if (/\.(?:tif|tiff)$/i.test(rawName)) {
       ficheirosExtraidos.push({
         nome: rawName.toUpperCase(),
         tamanho: rawSize,
@@ -307,7 +305,7 @@ export function indexarRelatorio(discoId: number, caminhoCompleto: string): { to
 
   // Fallback for plain HTML reports that don't use Snap2HTML's *size*timestamp format
   if (ficheirosExtraidos.length === 0) {
-    const simpleTifRegex = /[A-Za-z0-9_\-.]+\.(?:tif|tiff|jp2|jpg|jpeg|pdf|xml)/gi;
+    const simpleTifRegex = /[A-Za-z0-9_\-.]+\.(?:tif|tiff)/gi;
     const seen = new Set<string>();
     let m: RegExpExecArray | null;
     while ((m = simpleTifRegex.exec(conteudo)) !== null) {
@@ -485,226 +483,6 @@ function seedDatabaseIfNeeded() {
     insUser.run('admin', hashPassword('admin123'), 1);
     insUser.run('jmagalhaes', hashPassword('ridis2026'), 1);
     insUser.run('operador', hashPassword('operador123'), 0);
-  }
-
-  const diskCountRow = db.prepare('SELECT COUNT(*) as cnt FROM discos_usb').get() as { cnt: number };
-  if (diskCountRow.cnt === 0) {
-    const sampleDisks = [
-      {
-        arquivo: 'ANTT',
-        remetente: 'Carlos Mendes',
-        data_entrada: '2026-09-22',
-        ticket_num: 'TICK-2026-8410',
-        id_disco: 'DISCO-ANTT-041',
-        projeto: 'PRR — Digitalização Registos Paroquiais',
-        localizacao: 'Cofre B · Prateleira 2',
-        tamanho_disco: '4 TB',
-        marca: 'Western Digital Black',
-        numero_serie: 'WDB-SN9984120A',
-        verificado: 1,
-        ticket_integracao: 'INT-2026-4102',
-        integrado: 1,
-        armazenado_servidor: 1,
-        total_imagens: 45,
-        observacoes: 'Matrizes TIFF não comprimidas 400dpi verificadas sem erros de checksum.',
-        relatorio_file: 'DISCO-ANTT-041_1727510001.html',
-        pastas: [
-          {
-            pasta: 'E:/PT-ANTT-PRQ-LSB01/Livros_Batismo',
-            cotaBase: 'PT-ANTT-PRQ-LSB01-001-0001',
-            qtdTif: 25,
-            tamanhoMedioBytes: 48500000,
-          },
-          {
-            pasta: 'E:/PT-ANTT-PRQ-LSB01/Livros_Casamento',
-            cotaBase: 'PT-ANTT-PRQ-LSB01-002-0014',
-            qtdTif: 20,
-            tamanhoMedioBytes: 51200000,
-          },
-        ],
-      },
-      {
-        arquivo: 'ADPRT',
-        remetente: 'Helena Sousa',
-        data_entrada: '2026-09-19',
-        ticket_num: 'TICK-2026-8392',
-        id_disco: 'DISCO-ADPRT-118',
-        projeto: 'PRR — Fundos Notariais Porto',
-        localizacao: 'Armário A · Gaveta 4',
-        tamanho_disco: '8 TB',
-        marca: 'Seagate IronWolf Pro',
-        numero_serie: 'ST8000VN004-7721',
-        verificado: 1,
-        ticket_integracao: 'INT-2026-4089',
-        integrado: 1,
-        armazenado_servidor: 1,
-        total_imagens: 40,
-        observacoes: 'Inclui lotes do 1.º Cartório Notarial do Porto. Relatório Snap2HTML indexado.',
-        relatorio_file: 'DISCO-ADPRT-118_1727510002.html',
-        pastas: [
-          {
-            pasta: 'F:/PT-ADPRT-NOT-CNPRT01/Lote_01',
-            cotaBase: 'PT-ADPRT-NOT-CNPRT01-001-0042',
-            qtdTif: 20,
-            tamanhoMedioBytes: 62000000,
-          },
-          {
-            pasta: 'F:/PT-ADPRT-PRQ-PPRT01/Lote_02',
-            cotaBase: 'PT-ADPRT-PRQ-PPRT01-003-0108',
-            qtdTif: 20,
-            tamanhoMedioBytes: 58400000,
-          },
-        ],
-      },
-      {
-        arquivo: 'ADAVR',
-        remetente: 'Rui Figueiredo',
-        data_entrada: '2026-09-15',
-        ticket_num: 'TICK-2026-8315',
-        id_disco: 'DISCO-ADAVR-019',
-        projeto: 'Digitalização Passaportes Aveiro',
-        localizacao: 'Armário A · Gaveta 1',
-        tamanho_disco: '2 TB',
-        marca: 'Samsung T7 Shield',
-        numero_serie: 'S6XPNS0W401928',
-        verificado: 1,
-        ticket_integracao: 'INT-2026-4055',
-        integrado: 0,
-        armazenado_servidor: 1,
-        total_imagens: 30,
-        observacoes: 'Aguarda validação final do ticket de integração no repositório.',
-        relatorio_file: 'DISCO-ADAVR-019_1727510003.html',
-        pastas: [
-          {
-            pasta: 'D:/PT-ADAVR-AC-GCAVR/Passaportes_1880_1910',
-            cotaBase: 'PT-ADAVR-AC-GCAVR-H-D-001-0005',
-            qtdTif: 30,
-            tamanhoMedioBytes: 39100000,
-          },
-        ],
-      },
-      {
-        arquivo: 'AHU',
-        remetente: 'Teresa Vasconcelos',
-        data_entrada: '2026-09-10',
-        ticket_num: 'TICK-2026-8240',
-        id_disco: 'DISCO-AHU-074',
-        projeto: 'Conselho Ultramarino — Cartografia',
-        localizacao: 'Cofre A · Prateleira 1',
-        tamanho_disco: '6 TB',
-        marca: 'LaCie d2 Professional',
-        numero_serie: 'LAC-6TB-0092841',
-        verificado: 1,
-        ticket_integracao: 'INT-2026-3998',
-        integrado: 1,
-        armazenado_servidor: 1,
-        total_imagens: 28,
-        observacoes: 'Cartografia histórica de grande formato (TIFF 600dpi).',
-        relatorio_file: 'DISCO-AHU-074_1727510004.html',
-        pastas: [
-          {
-            pasta: 'G:/PT-AHU-CU-CART/Brasil_Maranhao',
-            cotaBase: 'PT-AHU-CU-CART-009-0082',
-            qtdTif: 16,
-            tamanhoMedioBytes: 115000000,
-          },
-          {
-            pasta: 'G:/PT-AHU-CU-CART/Angola_Luanda',
-            cotaBase: 'PT-AHU-CU-CART-001-0019',
-            qtdTif: 12,
-            tamanhoMedioBytes: 98000000,
-          },
-        ],
-      },
-      {
-        arquivo: 'CPF',
-        remetente: 'Miguel Moreira',
-        data_entrada: '2026-09-05',
-        ticket_num: 'TICK-2026-8190',
-        id_disco: 'DISCO-CPF-032',
-        projeto: 'Espólio Fotográfico Alvão',
-        localizacao: 'Sala Técnica 2 · Bastidor 3',
-        tamanho_disco: '4 TB',
-        marca: 'SanDisk Professional G-Drive',
-        numero_serie: 'SDG-4TB-882716',
-        verificado: 1,
-        ticket_integracao: '',
-        integrado: 0,
-        armazenado_servidor: 1,
-        total_imagens: 25,
-        observacoes: 'Negativos em vidro digitalizados em matrizes TIFF 16-bit.',
-        relatorio_file: 'DISCO-CPF-032_1727510005.html',
-        pastas: [
-          {
-            pasta: 'E:/PT-CPF-ALV/Placas_Vidro_Douro',
-            cotaBase: 'PT-CPF-ALV-001-0210',
-            qtdTif: 25,
-            tamanhoMedioBytes: 84000000,
-          },
-        ],
-      },
-      {
-        arquivo: 'ADEVR',
-        remetente: 'Ana Paula Tavares',
-        data_entrada: '2026-08-28',
-        ticket_num: 'TICK-2026-8104',
-        id_disco: 'DISCO-ADEVR-055',
-        projeto: 'PRR — Misericórdia de Évora',
-        localizacao: 'Armário B · Gaveta 2',
-        tamanho_disco: '2 TB',
-        marca: 'Toshiba Canvio Basics',
-        numero_serie: 'TOS-2TB-4491827',
-        verificado: 0,
-        ticket_integracao: '',
-        integrado: 0,
-        armazenado_servidor: 0,
-        total_imagens: 22,
-        observacoes: 'Rececionado nos Serviços Centrais. Em fila para verificação técnica.',
-        relatorio_file: 'DISCO-ADEVR-055_1727510006.html',
-        pastas: [
-          {
-            pasta: 'D:/PT-ADEVR-SCMEVR/Livros_Receita',
-            cotaBase: 'PT-ADEVR-SCMEVR-A-004-0011',
-            qtdTif: 22,
-            tamanhoMedioBytes: 44000000,
-          },
-        ],
-      },
-    ];
-
-    const insertStmt = db.prepare(`
-      INSERT INTO discos_usb (
-        arquivo, remetente, data_entrada, ticket_num, id_disco, projeto,
-        localizacao, tamanho_disco, marca, numero_serie,
-        verificado, ticket_integracao, integrado,
-        armazenado_servidor, total_imagens, observacoes, relatorio_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const d of sampleDisks) {
-      gerarRelatorioSnap2HtmlReal(d.relatorio_file, d.id_disco, d.arquivo, d.projeto, d.pastas);
-      const res = insertStmt.run(
-        d.arquivo,
-        d.remetente,
-        d.data_entrada,
-        d.ticket_num,
-        d.id_disco,
-        d.projeto,
-        d.localizacao,
-        d.tamanho_disco,
-        d.marca,
-        d.numero_serie,
-        d.verificado,
-        d.ticket_integracao,
-        d.integrado,
-        d.armazenado_servidor,
-        d.total_imagens,
-        d.observacoes,
-        d.relatorio_file
-      );
-      const discoId = Number(res.lastInsertRowid);
-      indexarRelatorio(discoId, path.join(RELATORIOS_DIR, d.relatorio_file));
-    }
   }
 }
 
@@ -933,7 +711,7 @@ app.get('/api/discos', (req, res) => {
     const { likePattern } = buildFileLikePattern(busca);
     const matchingFileRows = db
       .prepare(
-        `SELECT disco_id, nome_ficheiro FROM relatorio_ficheiros WHERE nome_ficheiro LIKE ? ORDER BY nome_ficheiro LIMIT 500`
+        `SELECT disco_id, nome_ficheiro FROM relatorio_ficheiros WHERE nome_ficheiro LIKE ? AND (nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF') ORDER BY nome_ficheiro LIMIT 500`
       )
       .all(likePattern) as { disco_id: number; nome_ficheiro: string }[];
 

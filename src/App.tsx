@@ -1221,32 +1221,6 @@ export default function App() {
                 Entrar
               </button>
             </form>
-
-            <div className="mt-6 pt-5 border-t border-slate-800">
-              <div className="text-xs text-slate-400 mb-2">Acesso rápido de demonstração:</div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername('jmagalhaes');
-                    setLoginPassword('ridis2026');
-                  }}
-                  className="flex-1 py-1.5 px-3 rounded border border-slate-700 hover:border-slate-600 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  jmagalhaes (Admin)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setLoginUsername('operador');
-                    setLoginPassword('operador123');
-                  }}
-                  className="flex-1 py-1.5 px-3 rounded border border-slate-700 hover:border-slate-600 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
-                >
-                  operador (Operador)
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 
