@@ -1354,45 +1354,6 @@ export default function App() {
 
           {/* Zone 3: Primary Actions */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            {activeTab === 'inventario' && (
-              <>
-                <a
-                  href="/api/exportar-template"
-                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Template CSV
-                </a>
-                <a
-                  href={buildExportCsvUrl()}
-                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-emerald-400'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-emerald-700'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Exportar CSV
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setIsCsvModalOpen(true)}
-                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-amber-400'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-amber-700'
-                  }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Importar CSV
-                </button>
-              </>
-            )}
-
             <button
               type="button"
               onClick={openNewDiscoModal}
@@ -2268,7 +2229,42 @@ export default function App() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <a
+                  href="/api/exportar-template"
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Template CSV
+                </a>
+                <a
+                  href={buildExportCsvUrl()}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-emerald-400'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-emerald-700'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Exportar CSV
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsCsvModalOpen(true)}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-amber-400'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-amber-700'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Importar CSV
+                </button>
+
                 <button
                   type="button"
                   onClick={handleOptimizeDb}
@@ -3573,7 +3569,6 @@ export default function App() {
         <div>
           <strong>RIDIS · DGLAB</strong> — Direção-Geral do Livro, dos Arquivos e das Bibliotecas
         </div>
-        <div className="font-mono">Base de Dados Local SQLite · Indexação Automática Snap2HTML (.TIF)</div>
       </footer>
     </div>
   );
