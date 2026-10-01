@@ -833,14 +833,18 @@ app.get('/api/discos', (req, res) => {
     params.push(Number(f_armazenado));
   }
 
-  let discos: any[] = [];
-  const matchedFilesByDisco: Record<number, { files: string[]; total: number }> = {};
+  const pageLimit = Math.max(1, parseInt(String(req.query.limit || '25'), 10) || 25);
+
+  let allMatchingDiscos: any[] = [];
+  const matchedCountByDisco: Record<number, number> = {};
+  let likePatternForSamples = '';
 
   if (busca) {
     const isWildcard = busca.includes('*') || busca.includes('?');
     const padraoTexto = isWildcard ? busca.replace(/\*/g, '%').replace(/\?/g, '_') : `%${busca}%`;
 
     const { likePattern } = buildFileLikePattern(busca);
+    likePatternForSamples = likePattern;
     const matchingDiscoSummary = db
       .prepare(
         `SELECT disco_id, COUNT(*) as total_matches
@@ -850,22 +854,10 @@ app.get('/api/discos', (req, res) => {
       )
       .all(likePattern, likePattern) as { disco_id: number; total_matches: number }[];
 
-    const sampleFilesStmt = db.prepare(
-      `SELECT nome_ficheiro
-       FROM relatorio_ficheiros
-       WHERE disco_id = ? AND (nome_ficheiro LIKE ? OR pasta LIKE ?)
-       ORDER BY nome_ficheiro
-       LIMIT 10`
-    );
-
     const matchedDiscoIds = new Set<number>();
     for (const row of matchingDiscoSummary) {
       matchedDiscoIds.add(row.disco_id);
-      const sampleRows = sampleFilesStmt.all(row.disco_id, likePattern, likePattern) as { nome_ficheiro: string }[];
-      matchedFilesByDisco[row.disco_id] = {
-        files: sampleRows.map((r) => r.nome_ficheiro),
-        total: row.total_matches,
-      };
+      matchedCountByDisco[row.disco_id] = row.total_matches;
     }
 
     const textClause = `
@@ -886,35 +878,25 @@ app.get('/api/discos', (req, res) => {
       const placeholders = idList.map(() => '?').join(',');
       const combinedClause = `(${textClause} OR id IN (${placeholders}))`;
       const fullWhere = [...whereClauses, combinedClause].join(' AND ');
-      discos = db
+      allMatchingDiscos = db
         .prepare(`SELECT * FROM discos_usb WHERE ${fullWhere} ORDER BY ${SQL_DATA_ORDER}`)
         .all(...params, ...textParams, ...idList);
     } else {
       const fullWhere = [...whereClauses, textClause].join(' AND ');
-      discos = db
+      allMatchingDiscos = db
         .prepare(`SELECT * FROM discos_usb WHERE ${fullWhere} ORDER BY ${SQL_DATA_ORDER}`)
         .all(...params, ...textParams);
     }
   } else if (whereClauses.length > 0) {
     const sqlWhere = whereClauses.join(' AND ');
-    discos = db.prepare(`SELECT * FROM discos_usb WHERE ${sqlWhere} ORDER BY ${SQL_DATA_ORDER}`).all(...params);
+    allMatchingDiscos = db
+      .prepare(`SELECT * FROM discos_usb WHERE ${sqlWhere} ORDER BY ${SQL_DATA_ORDER}`)
+      .all(...params);
   } else {
-    discos = db.prepare(`SELECT * FROM discos_usb ORDER BY ${SQL_DATA_ORDER} LIMIT 25`).all();
+    allMatchingDiscos = db
+      .prepare(`SELECT * FROM discos_usb ORDER BY ${SQL_DATA_ORDER} LIMIT ?`)
+      .all(pageLimit);
   }
-
-  const enrichedDiscos = discos.map((d) => {
-    const matched = matchedFilesByDisco[d.id] || { files: [], total: 0 };
-    return {
-      ...d,
-      verificado: Boolean(d.verificado),
-      integrado: Boolean(d.integrado),
-      armazenado_servidor: Boolean(d.armazenado_servidor),
-      indexed_files_count: Number(d.total_imagens) || 0,
-      indexed_tif_count: Number(d.total_imagens) || 0,
-      matched_files: matched.files,
-      matched_files_total: matched.total,
-    };
-  });
 
   let totalGeral = 0;
   let totalImagensSoma = 0;
@@ -923,11 +905,11 @@ app.get('/api/discos', (req, res) => {
   let totalArmazenado = 0;
 
   if (busca || whereClauses.length > 0) {
-    totalGeral = enrichedDiscos.length;
-    totalImagensSoma = enrichedDiscos.reduce((acc, d) => acc + (Number(d.total_imagens) || 0), 0);
-    totalVerificado = enrichedDiscos.filter((d) => d.verificado).length;
-    totalIntegrado = enrichedDiscos.filter((d) => d.integrado).length;
-    totalArmazenado = enrichedDiscos.filter((d) => d.armazenado_servidor).length;
+    totalGeral = allMatchingDiscos.length;
+    totalImagensSoma = allMatchingDiscos.reduce((acc, d) => acc + (Number(d.total_imagens) || 0), 0);
+    totalVerificado = allMatchingDiscos.filter((d) => Boolean(d.verificado)).length;
+    totalIntegrado = allMatchingDiscos.filter((d) => Boolean(d.integrado)).length;
+    totalArmazenado = allMatchingDiscos.filter((d) => Boolean(d.armazenado_servidor)).length;
   } else {
     const statsRow = db
       .prepare(
@@ -946,6 +928,39 @@ app.get('/api/discos', (req, res) => {
     totalIntegrado = statsRow?.total_integrado || 0;
     totalArmazenado = statsRow?.total_armazenado || 0;
   }
+
+  const visibleDiscos = allMatchingDiscos.slice(0, pageLimit);
+
+  const sampleFilesStmt = busca
+    ? db.prepare(
+        `SELECT nome_ficheiro
+         FROM relatorio_ficheiros
+         WHERE disco_id = ? AND (nome_ficheiro LIKE ? OR pasta LIKE ?)
+         ORDER BY nome_ficheiro
+         LIMIT 10`
+      )
+    : null;
+
+  const enrichedDiscos = visibleDiscos.map((d) => {
+    const totalMatches = matchedCountByDisco[d.id] || 0;
+    let matchedFiles: string[] = [];
+    if (sampleFilesStmt && totalMatches > 0) {
+      const sampleRows = sampleFilesStmt.all(d.id, likePatternForSamples, likePatternForSamples) as {
+        nome_ficheiro: string;
+      }[];
+      matchedFiles = sampleRows.map((r) => r.nome_ficheiro);
+    }
+    return {
+      ...d,
+      verificado: Boolean(d.verificado),
+      integrado: Boolean(d.integrado),
+      armazenado_servidor: Boolean(d.armazenado_servidor),
+      indexed_files_count: Number(d.total_imagens) || 0,
+      indexed_tif_count: Number(d.total_imagens) || 0,
+      matched_files: matchedFiles,
+      matched_files_total: totalMatches,
+    };
+  });
 
   const pct = (val: number) => (totalGeral > 0 ? Math.round((val / totalGeral) * 100) : 0);
 

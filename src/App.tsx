@@ -130,6 +130,7 @@ export default function App() {
   const [fVerificado, setFVerificado] = useState('');
   const [fIntegrado, setFIntegrado] = useState('');
   const [fArmazenado, setFArmazenado] = useState('');
+  const [visibleLimit, setVisibleLimit] = useState(25);
 
   // Copy feedback state
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -217,6 +218,11 @@ export default function App() {
   const [gitUpdateLogs, setGitUpdateLogs] = useState<string[] | null>(null);
   const [confirmGitUpdate, setConfirmGitUpdate] = useState(false);
 
+  // Reset pagination to 25 whenever search or filters change
+  useEffect(() => {
+    setVisibleLimit(25);
+  }, [busca, fArquivo, fProjeto, fLocalizacao, fVerificado, fIntegrado, fArmazenado]);
+
   // Fetch main inventory
   const fetchDiscos = useCallback(async () => {
     setLoadingDiscos(true);
@@ -229,6 +235,7 @@ export default function App() {
       if (fVerificado !== '') params.set('f_verificado', fVerificado);
       if (fIntegrado !== '') params.set('f_integrado', fIntegrado);
       if (fArmazenado !== '') params.set('f_armazenado', fArmazenado);
+      params.set('limit', String(visibleLimit));
 
       const res = await fetch(`/api/discos?${params.toString()}`);
       if (!res.ok) throw new Error('Falha ao carregar discos');
@@ -243,7 +250,7 @@ export default function App() {
     } finally {
       setLoadingDiscos(false);
     }
-  }, [busca, fArquivo, fProjeto, fLocalizacao, fVerificado, fIntegrado, fArmazenado, showFlash]);
+  }, [busca, fArquivo, fProjeto, fLocalizacao, fVerificado, fIntegrado, fArmazenado, visibleLimit, showFlash]);
 
   useEffect(() => {
     if (currentUser) {
@@ -2107,6 +2114,47 @@ export default function App() {
                     )}
                   </div>
                 ))}
+
+                {/* Pagination / Load Next 25 Records Footer */}
+                <div
+                  className={`p-4 border rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs ${
+                    theme === 'dark'
+                      ? 'bg-slate-900/60 border-slate-800 text-slate-400'
+                      : 'bg-white border-slate-200 text-slate-600'
+                  }`}
+                >
+                  <div>
+                    A mostrar <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}>{formatNumber(discos.length)}</strong> de{' '}
+                    <strong className={theme === 'dark' ? 'text-slate-200' : 'text-slate-900'}>{formatNumber(stats.total)}</strong> registos
+                  </div>
+
+                  {discos.length < stats.total && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setVisibleLimit((prev) => prev + 25)}
+                        disabled={loadingDiscos}
+                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold transition-colors cursor-pointer"
+                      >
+                        Ver mais 25 registos (+{Math.min(25, stats.total - discos.length)})
+                      </button>
+                      {stats.total - discos.length > 25 && (
+                        <button
+                          type="button"
+                          onClick={() => setVisibleLimit(stats.total)}
+                          disabled={loadingDiscos}
+                          className={`px-3 py-2 rounded-lg border font-medium transition-colors cursor-pointer ${
+                            theme === 'dark'
+                              ? 'border-slate-700 hover:bg-slate-800 text-slate-300'
+                              : 'border-slate-300 hover:bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          Ver todos ({formatNumber(stats.total)})
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
