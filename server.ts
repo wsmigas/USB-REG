@@ -763,15 +763,14 @@ app.get('/api/discos', (req, res) => {
   }
 
   const enrichedDiscos = discos.map((d) => {
-    const c = getDiscoFileCount(d.id);
     const matched = matchedFilesByDisco[d.id] || { files: [], total: 0 };
     return {
       ...d,
       verificado: Boolean(d.verificado),
       integrado: Boolean(d.integrado),
       armazenado_servidor: Boolean(d.armazenado_servidor),
-      indexed_files_count: c.total_files,
-      indexed_tif_count: c.tif_files,
+      indexed_files_count: Number(d.total_imagens) || 0,
+      indexed_tif_count: Number(d.total_imagens) || 0,
       matched_files: matched.files,
       matched_files_total: matched.total,
     };
@@ -808,8 +807,6 @@ app.get('/api/discos', (req, res) => {
     totalArmazenado = statsRow?.total_armazenado || 0;
   }
 
-  const totalIndexed = getTotalIndexedCount();
-
   const pct = (val: number) => (totalGeral > 0 ? Math.round((val / totalGeral) * 100) : 0);
 
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -827,8 +824,8 @@ app.get('/api/discos', (req, res) => {
       pct_integrado: pct(totalIntegrado),
       armazenado: totalArmazenado,
       pct_armazenado: pct(totalArmazenado),
-      total_indexed_files: totalIndexed,
-      total_indexed_tif: totalIndexed,
+      total_indexed_files: totalImagensSoma,
+      total_indexed_tif: totalImagensSoma,
     },
   });
 });

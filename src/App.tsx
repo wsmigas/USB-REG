@@ -1449,7 +1449,7 @@ export default function App() {
 
             {/* Statistics Grid (Single-Elevation, Tabular Numerals) */}
             <div
-              className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 border rounded-xl divide-y md:divide-y-0 md:divide-x ${
+              className={`grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 border rounded-xl divide-y md:divide-y-0 md:divide-x ${
                 theme === 'dark'
                   ? 'bg-slate-900/60 border-slate-800 divide-slate-800'
                   : 'bg-white border-slate-200 divide-slate-200'
@@ -1465,18 +1465,10 @@ export default function App() {
               </div>
               <div className="p-4">
                 <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Total Imagens Declaradas
+                  Total de Imagens
                 </div>
                 <div className="text-2xl font-bold font-mono tabular-nums mt-1">
                   {formatNumber(stats.total_imagens)}
-                </div>
-              </div>
-              <div className="p-4">
-                <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  Matrizes .TIF Indexadas
-                </div>
-                <div className="text-2xl font-bold font-mono tabular-nums mt-1 text-blue-500">
-                  {formatNumber(stats.total_indexed_tif)}
                 </div>
               </div>
               <div className="p-4">
@@ -1914,24 +1906,6 @@ export default function App() {
                         )}
                         <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
                           Total de img: {d.total_imagens || 0}
-                          {d.indexed_tif_count > 0 && (
-                            <>
-                              {' '}
-                              ·{' '}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setInspectModalDisco(d);
-                                  setInspectMode('index');
-                                  setInspectQuery(busca);
-                                }}
-                                className="text-[#6ea8fe] hover:underline font-semibold cursor-pointer"
-                                title="Ver ficheiros .TIF indexados neste relatório Snap2HTML"
-                              >
-                                {formatNumber(d.indexed_tif_count)} .TIF
-                              </button>
-                            </>
-                          )}
                         </div>
                       </div>
 
