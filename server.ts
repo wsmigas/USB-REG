@@ -14,10 +14,14 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const BASE_DIR = process.cwd();
 const RELATORIOS_DIR = path.join(BASE_DIR, 'relatorios');
+const BACKUPS_DIR = path.join(BASE_DIR, 'backups');
 const DB_PATH = path.join(BASE_DIR, 'gestao_discos.db');
 
 if (!fs.existsSync(RELATORIOS_DIR)) {
   fs.mkdirSync(RELATORIOS_DIR, { recursive: true });
+}
+if (!fs.existsSync(BACKUPS_DIR)) {
+  fs.mkdirSync(BACKUPS_DIR, { recursive: true });
 }
 
 export const ARQUIVOS_MAP: Record<string, string> = {
@@ -1742,6 +1746,613 @@ app.delete('/api/usuarios/:id', (req, res) => {
   }
   db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
   res.json({ message: 'Utilizador eliminado.' });
+});
+
+// ============================================================================
+// MÓDULO DE ADMINISTRAÇÃO DA BASE DE DADOS (EXCLUSIVO PARA ADMINISTRADORES)
+// ============================================================================
+
+function requireAdmin(req: express.Request, res: express.Response): boolean {
+  const rawAdminId =
+    req.headers['x-admin-user-id'] || req.query.admin_user_id || req.body?.admin_user_id;
+  const adminId = Number(rawAdminId || 0);
+  if (!adminId) {
+    res.status(403).json({ error: 'Acesso restrito: este módulo apenas pode ser acedido por Administradores.' });
+    return false;
+  }
+  const user = db.prepare('SELECT id, username, is_admin FROM usuarios WHERE id = ?').get(adminId) as
+    | { id: number; username: string; is_admin: number }
+    | undefined;
+  if (!user || !user.is_admin) {
+    res.status(403).json({ error: 'Permissão recusada: apenas utilizadores Administradores podem gerir a base de dados.' });
+    return false;
+  }
+  return true;
+}
+
+function buildTimestampTag(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(
+    now.getMinutes()
+  )}${pad(now.getSeconds())}`;
+}
+
+function buildFullBackupPayload(includeHtmlReports = true) {
+  const discos_usb = db.prepare('SELECT * FROM discos_usb ORDER BY id ASC').all();
+  const usuarios = db.prepare('SELECT * FROM usuarios ORDER BY id ASC').all();
+  const relatorio_ficheiros = db.prepare('SELECT * FROM relatorio_ficheiros ORDER BY id ASC').all();
+
+  const relatorios_files: { filename: string; content_base64: string }[] = [];
+  if (includeHtmlReports && fs.existsSync(RELATORIOS_DIR)) {
+    const files = fs
+      .readdirSync(RELATORIOS_DIR)
+      .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+    for (const filename of files) {
+      try {
+        const buf = fs.readFileSync(path.join(RELATORIOS_DIR, filename));
+        relatorios_files.push({
+          filename,
+          content_base64: buf.toString('base64'),
+        });
+      } catch {
+        // ignore unreadable file
+      }
+    }
+  }
+
+  return {
+    ridis_backup_version: '1.0',
+    created_at: new Date().toISOString(),
+    tables: {
+      discos_usb,
+      usuarios,
+      relatorio_ficheiros,
+    },
+    relatorios_files,
+  };
+}
+
+function createPreRestoreSafetyBackup(): string {
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+  } catch {
+    // ignore
+  }
+  const filename = `pre_restauro_${buildTimestampTag()}.db`;
+  const dest = path.join(BACKUPS_DIR, filename);
+  if (fs.existsSync(DB_PATH)) {
+    fs.copyFileSync(DB_PATH, dest);
+  }
+  return filename;
+}
+
+function restoreFromSqliteFile(sqliteFilePath: string): { discos: number; ficheiros: number; usuarios: number } {
+  const tempDb = new DatabaseSync(sqliteFilePath);
+  let discosRows: any[] = [];
+  let usuariosRows: any[] = [];
+  let ficheirosRows: any[] = [];
+
+  try {
+    discosRows = tempDb.prepare('SELECT * FROM discos_usb').all() as any[];
+  } catch {
+    tempDb.close();
+    throw new Error('O ficheiro SQLite selecionado não contém a tabela "discos_usb" válida.');
+  }
+
+  try {
+    usuariosRows = tempDb.prepare('SELECT * FROM usuarios').all() as any[];
+  } catch {
+    usuariosRows = [];
+  }
+
+  try {
+    ficheirosRows = tempDb.prepare('SELECT * FROM relatorio_ficheiros').all() as any[];
+  } catch {
+    ficheirosRows = [];
+  }
+
+  tempDb.close();
+
+  db.exec('BEGIN IMMEDIATE TRANSACTION');
+  try {
+    db.prepare('DELETE FROM relatorio_ficheiros').run();
+    db.prepare('DELETE FROM discos_usb').run();
+
+    const insDisco = db.prepare(`
+      INSERT INTO discos_usb (
+        id, arquivo, remetente, data_entrada, ticket_num, id_disco, projeto,
+        localizacao, tamanho_disco, marca, numero_serie,
+        verificado, ticket_integracao, integrado,
+        armazenado_servidor, total_imagens, observacoes, created_at, relatorio_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const d of discosRows) {
+      insDisco.run(
+        d.id,
+        d.arquivo ?? '',
+        d.remetente ?? '',
+        d.data_entrada ?? '',
+        d.ticket_num ?? '',
+        d.id_disco ?? `DISCO-${d.id}`,
+        d.projeto ?? '',
+        d.localizacao ?? '',
+        d.tamanho_disco ?? '',
+        d.marca ?? '',
+        d.numero_serie ?? '',
+        d.verificado ? 1 : 0,
+        d.ticket_integracao ?? '',
+        d.integrado ? 1 : 0,
+        d.armazenado_servidor ? 1 : 0,
+        Number(d.total_imagens) || 0,
+        d.observacoes ?? '',
+        d.created_at ?? new Date().toISOString(),
+        d.relatorio_path ?? null
+      );
+    }
+
+    if (ficheirosRows.length > 0) {
+      const insFich = db.prepare(
+        'INSERT INTO relatorio_ficheiros (disco_id, nome_ficheiro, tamanho_bytes, pasta) VALUES (?, ?, ?, ?)'
+      );
+      for (const f of ficheirosRows) {
+        insFich.run(f.disco_id, f.nome_ficheiro, Number(f.tamanho_bytes) || 0, f.pasta ?? '');
+      }
+    }
+
+    if (usuariosRows.length > 0) {
+      const hasAdmin = usuariosRows.some((u) => u.is_admin);
+      if (hasAdmin) {
+        db.prepare('DELETE FROM usuarios').run();
+        const insUser = db.prepare(
+          'INSERT INTO usuarios (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)'
+        );
+        for (const u of usuariosRows) {
+          insUser.run(
+            u.id,
+            u.username,
+            u.password_hash,
+            u.is_admin ? 1 : 0,
+            u.created_at ?? new Date().toISOString()
+          );
+        }
+      }
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  }
+
+  // If any disk has a relatorio_path in ./relatorios but 0 indexed files in the restored DB, index it automatically
+  for (const d of discosRows) {
+    if (d.relatorio_path) {
+      const count = (
+        db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros WHERE disco_id = ?').get(d.id) as { c: number }
+      )?.c;
+      if (!count) {
+        const fullHtmlPath = path.join(RELATORIOS_DIR, path.basename(String(d.relatorio_path)));
+        if (fs.existsSync(fullHtmlPath)) {
+          indexarRelatorio(d.id, fullHtmlPath);
+        }
+      }
+    }
+  }
+
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+  } catch {
+    // ignore
+  }
+
+  const finalFichCount = (db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number })?.c || 0;
+  const finalUserCount = (db.prepare('SELECT COUNT(*) as c FROM usuarios').get() as { c: number })?.c || 0;
+
+  return {
+    discos: discosRows.length,
+    ficheiros: finalFichCount,
+    usuarios: finalUserCount,
+  };
+}
+
+function restoreFromFullJsonPayload(payload: any): {
+  discos: number;
+  ficheiros: number;
+  usuarios: number;
+  relatoriosRestaurados: number;
+} {
+  if (!payload || !payload.tables || !Array.isArray(payload.tables.discos_usb)) {
+    throw new Error('O ficheiro JSON de backup não tem a estrutura válida do sistema RIDIS.');
+  }
+
+  const discosRows = payload.tables.discos_usb as any[];
+  const usuariosRows = Array.isArray(payload.tables.usuarios) ? (payload.tables.usuarios as any[]) : [];
+  const ficheirosRows = Array.isArray(payload.tables.relatorio_ficheiros)
+    ? (payload.tables.relatorio_ficheiros as any[])
+    : [];
+  const relatoriosFiles = Array.isArray(payload.relatorios_files) ? payload.relatorios_files : [];
+
+  let relatoriosRestaurados = 0;
+  for (const rf of relatoriosFiles) {
+    if (rf && rf.filename && rf.content_base64) {
+      const safeName = path.basename(String(rf.filename));
+      if (safeName.toLowerCase().endsWith('.html') || safeName.toLowerCase().endsWith('.htm')) {
+        fs.writeFileSync(path.join(RELATORIOS_DIR, safeName), Buffer.from(String(rf.content_base64), 'base64'));
+        relatoriosRestaurados++;
+      }
+    }
+  }
+
+  db.exec('BEGIN IMMEDIATE TRANSACTION');
+  try {
+    db.prepare('DELETE FROM relatorio_ficheiros').run();
+    db.prepare('DELETE FROM discos_usb').run();
+
+    const insDisco = db.prepare(`
+      INSERT INTO discos_usb (
+        id, arquivo, remetente, data_entrada, ticket_num, id_disco, projeto,
+        localizacao, tamanho_disco, marca, numero_serie,
+        verificado, ticket_integracao, integrado,
+        armazenado_servidor, total_imagens, observacoes, created_at, relatorio_path
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    for (const d of discosRows) {
+      insDisco.run(
+        d.id,
+        d.arquivo ?? '',
+        d.remetente ?? '',
+        d.data_entrada ?? '',
+        d.ticket_num ?? '',
+        d.id_disco ?? `DISCO-${d.id}`,
+        d.projeto ?? '',
+        d.localizacao ?? '',
+        d.tamanho_disco ?? '',
+        d.marca ?? '',
+        d.numero_serie ?? '',
+        d.verificado ? 1 : 0,
+        d.ticket_integracao ?? '',
+        d.integrado ? 1 : 0,
+        d.armazenado_servidor ? 1 : 0,
+        Number(d.total_imagens) || 0,
+        d.observacoes ?? '',
+        d.created_at ?? new Date().toISOString(),
+        d.relatorio_path ?? null
+      );
+    }
+
+    if (ficheirosRows.length > 0) {
+      const insFich = db.prepare(
+        'INSERT INTO relatorio_ficheiros (disco_id, nome_ficheiro, tamanho_bytes, pasta) VALUES (?, ?, ?, ?)'
+      );
+      for (const f of ficheirosRows) {
+        insFich.run(f.disco_id, f.nome_ficheiro, Number(f.tamanho_bytes) || 0, f.pasta ?? '');
+      }
+    }
+
+    if (usuariosRows.length > 0 && usuariosRows.some((u) => u.is_admin)) {
+      db.prepare('DELETE FROM usuarios').run();
+      const insUser = db.prepare(
+        'INSERT INTO usuarios (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)'
+      );
+      for (const u of usuariosRows) {
+        insUser.run(
+          u.id,
+          u.username,
+          u.password_hash,
+          u.is_admin ? 1 : 0,
+          u.created_at ?? new Date().toISOString()
+        );
+      }
+    }
+
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  }
+
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+  } catch {
+    // ignore
+  }
+
+  return {
+    discos: discosRows.length,
+    ficheiros: ficheirosRows.length,
+    usuarios: usuariosRows.length,
+    relatoriosRestaurados,
+  };
+}
+
+// 1. Get Database Status & List of Local Backups
+app.get('/api/admin/db/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    db.exec('PRAGMA wal_checkpoint(PASSIVE);');
+  } catch {
+    // ignore
+  }
+
+  const dbStat = fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH) : null;
+  const discosCount = (db.prepare('SELECT COUNT(*) as c FROM discos_usb').get() as { c: number })?.c || 0;
+  const ficheirosCount = (db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number })?.c || 0;
+  const usuariosCount = (db.prepare('SELECT COUNT(*) as c FROM usuarios').get() as { c: number })?.c || 0;
+
+  let integrity = 'ok';
+  try {
+    const checkRow = db.prepare('PRAGMA quick_check').get() as { quick_check?: string } | undefined;
+    integrity = checkRow?.quick_check || 'ok';
+  } catch {
+    integrity = 'ok';
+  }
+
+  let relatoriosHtmlCount = 0;
+  let relatoriosSizeBytes = 0;
+  if (fs.existsSync(RELATORIOS_DIR)) {
+    const rFiles = fs
+      .readdirSync(RELATORIOS_DIR)
+      .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+    relatoriosHtmlCount = rFiles.length;
+    for (const f of rFiles) {
+      try {
+        relatoriosSizeBytes += fs.statSync(path.join(RELATORIOS_DIR, f)).size;
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  const backupsList = fs.existsSync(BACKUPS_DIR)
+    ? fs
+        .readdirSync(BACKUPS_DIR)
+        .filter((f) => f.endsWith('.db') || f.endsWith('.json'))
+        .map((filename) => {
+          const st = fs.statSync(path.join(BACKUPS_DIR, filename));
+          const isJson = filename.endsWith('.json');
+          return {
+            filename,
+            size_bytes: st.size,
+            created_at: st.mtime.toISOString().replace('T', ' ').slice(0, 19),
+            type: isJson ? 'full_json' : 'sqlite',
+            label: filename.startsWith('pre_restauro_')
+              ? 'Salvaguarda Automática Pré-Restauro'
+              : isJson
+              ? 'Backup Completo (BD + Relatórios HTML)'
+              : 'Snapshot SQLite (.db)',
+          };
+        })
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+    : [];
+
+  res.json({
+    db_path: DB_PATH,
+    db_size_bytes: dbStat ? dbStat.size : 0,
+    db_modified_at: dbStat ? dbStat.mtime.toISOString().replace('T', ' ').slice(0, 19) : '-',
+    integrity_status: integrity,
+    backups_dir: BACKUPS_DIR,
+    relatorios_dir: RELATORIOS_DIR,
+    counts: {
+      discos_usb: discosCount,
+      relatorio_ficheiros: ficheirosCount,
+      usuarios: usuariosCount,
+      relatorios_html: relatoriosHtmlCount,
+      relatorios_size_bytes: relatoriosSizeBytes,
+    },
+    backups: backupsList,
+  });
+});
+
+// 2. Create a new local backup in ./backups/
+app.post('/api/admin/db/backup', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const mode = req.body?.mode === 'full_json' ? 'full_json' : 'sqlite';
+  const includeReports = req.body?.include_reports !== false;
+  const tag = buildTimestampTag();
+
+  try {
+    if (mode === 'full_json') {
+      const payload = buildFullBackupPayload(includeReports);
+      const filename = `backup_completo_ridis_${tag}.json`;
+      fs.writeFileSync(path.join(BACKUPS_DIR, filename), JSON.stringify(payload, null, 2), 'utf-8');
+      res.json({
+        message: `Backup completo criado com sucesso em backups/${filename} (${payload.tables.discos_usb.length} discos, ${payload.relatorios_files.length} relatórios HTML)!`,
+        filename,
+      });
+    } else {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      const filename = `backup_gestao_discos_${tag}.db`;
+      fs.copyFileSync(DB_PATH, path.join(BACKUPS_DIR, filename));
+      res.json({
+        message: `Snapshot da base de dados SQLite criado com sucesso em backups/${filename}!`,
+        filename,
+      });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao criar backup: ${e?.message || e}` });
+  }
+});
+
+// 3. Download active SQLite database file (gestao_discos.db)
+app.get('/api/admin/db/download-sqlite', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    const downloadName = `gestao_discos_${buildTimestampTag()}.db`;
+    res.download(DB_PATH, downloadName);
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao exportar ficheiro SQLite: ${e?.message || e}` });
+  }
+});
+
+// 4. Download Full JSON Backup (Database + Snap2HTML reports)
+app.get('/api/admin/db/download-full', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const payload = buildFullBackupPayload(true);
+    const downloadName = `backup_completo_ridis_${buildTimestampTag()}.json`;
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename=${downloadName}`);
+    res.send(JSON.stringify(payload, null, 2));
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao exportar backup completo: ${e?.message || e}` });
+  }
+});
+
+// 5. Download a specific saved backup from ./backups/
+app.get('/api/admin/db/backups/:filename/download', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const safeName = path.basename(req.params.filename);
+  const fullPath = path.join(BACKUPS_DIR, safeName);
+  if (!fs.existsSync(fullPath)) {
+    res.status(404).json({ error: 'Ficheiro de backup não encontrado.' });
+    return;
+  }
+  res.download(fullPath, safeName);
+});
+
+// 6. Restore from a saved backup in ./backups/
+app.post('/api/admin/db/backups/:filename/restore', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const safeName = path.basename(req.params.filename);
+  const fullPath = path.join(BACKUPS_DIR, safeName);
+  if (!fs.existsSync(fullPath)) {
+    res.status(404).json({ error: 'Ficheiro de backup não encontrado.' });
+    return;
+  }
+
+  try {
+    const safetyFile = createPreRestoreSafetyBackup();
+    if (safeName.endsWith('.json')) {
+      const raw = fs.readFileSync(fullPath, 'utf-8');
+      const payload = JSON.parse(raw);
+      const stats = restoreFromFullJsonPayload(payload);
+      res.json({
+        message: `Base de dados restaurada com sucesso a partir de "${safeName}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados, ${stats.relatoriosRestaurados} relatórios HTML)! Salvaguarda prévia guardada em ${safetyFile}.`,
+      });
+    } else {
+      const stats = restoreFromSqliteFile(fullPath);
+      res.json({
+        message: `Base de dados SQLite restaurada com sucesso a partir de "${safeName}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados)! Salvaguarda prévia guardada em ${safetyFile}.`,
+      });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao restaurar backup: ${e?.message || e}` });
+  }
+});
+
+// 7. Delete a saved backup from ./backups/
+app.delete('/api/admin/db/backups/:filename', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const safeName = path.basename(req.params.filename);
+  const fullPath = path.join(BACKUPS_DIR, safeName);
+  if (!fs.existsSync(fullPath)) {
+    res.status(404).json({ error: 'Ficheiro de backup não encontrado.' });
+    return;
+  }
+  try {
+    fs.unlinkSync(fullPath);
+    res.json({ message: `Backup "${safeName}" eliminado.` });
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao eliminar backup: ${e?.message || e}` });
+  }
+});
+
+// 8. Restore database by uploading an external .db / .sqlite / .json backup file
+app.post('/api/admin/db/restore-upload', uploadMemory.single('file'), (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  if (!req.file) {
+    res.status(400).json({ error: 'Selecione um ficheiro de backup (.db, .sqlite ou .json) para restaurar.' });
+    return;
+  }
+
+  const origName = req.file.originalname.toLowerCase();
+  const isJson = origName.endsWith('.json');
+  const isSqlite = origName.endsWith('.db') || origName.endsWith('.sqlite') || origName.endsWith('.sqlite3');
+
+  if (!isJson && !isSqlite) {
+    res.status(400).json({
+      error: 'Formato inválido. Apenas são suportados ficheiros SQLite (.db, .sqlite) ou Backups Completos (.json).',
+    });
+    return;
+  }
+
+  const tempRestorePath = path.join(BACKUPS_DIR, `.tmp_restore_${Date.now()}_${sanitizeFilename(origName)}`);
+
+  try {
+    const safetyFile = createPreRestoreSafetyBackup();
+
+    if (isJson) {
+      const payload = JSON.parse(req.file.buffer.toString('utf-8'));
+      const stats = restoreFromFullJsonPayload(payload);
+      res.json({
+        message: `Restauro concluído com sucesso a partir do ficheiro "${req.file.originalname}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados, ${stats.relatoriosRestaurados} relatórios HTML)! Salvaguarda prévia criada: ${safetyFile}.`,
+      });
+    } else {
+      const headerStr = req.file.buffer.subarray(0, 15).toString('utf-8');
+      if (!headerStr.startsWith('SQLite format 3')) {
+        res.status(400).json({ error: 'O ficheiro selecionado não é uma base de dados SQLite 3 válida.' });
+        return;
+      }
+
+      fs.writeFileSync(tempRestorePath, req.file.buffer);
+      const stats = restoreFromSqliteFile(tempRestorePath);
+      if (fs.existsSync(tempRestorePath)) {
+        fs.unlinkSync(tempRestorePath);
+      }
+
+      res.json({
+        message: `Restauro SQLite concluído com sucesso a partir de "${req.file.originalname}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados)! Salvaguarda prévia criada: ${safetyFile}.`,
+      });
+    }
+  } catch (e: any) {
+    if (fs.existsSync(tempRestorePath)) {
+      try {
+        fs.unlinkSync(tempRestorePath);
+      } catch {
+        // ignore
+      }
+    }
+    res.status(500).json({ error: `Erro ao restaurar base de dados: ${e?.message || e}` });
+  }
+});
+
+// 9. Database Maintenance: Optimize (VACUUM + WAL Checkpoint + Integrity Check)
+app.post('/api/admin/db/optimize', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+    db.exec('VACUUM;');
+    db.exec('ANALYZE;');
+    const checkRow = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+    res.json({
+      message: `Base de dados otimizada e compactada (VACUUM + WAL Checkpoint concluídos · Integridade: ${
+        checkRow?.integrity_check || 'ok'
+      })!`,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao otimizar base de dados: ${e?.message || e}` });
+  }
 });
 
 async function startServer() {

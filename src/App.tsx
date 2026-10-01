@@ -23,16 +23,21 @@ import {
   ArrowDownCircle,
   FileSpreadsheet,
   Filter,
+  MessageSquareText,
+  Database,
+  RotateCcw,
+  ShieldCheck,
+  Archive,
 } from 'lucide-react';
 import {
   DiscoUsb,
   RidisStats,
   IndexedFileRow,
-  RelatorioFileInfo,
   Usuario,
+  DbAdminStatus,
 } from './types';
 
-type ActiveTab = 'inventario' | 'pesquisa_tif' | 'relatorios' | 'usuarios';
+type ActiveTab = 'inventario' | 'usuarios' | 'admin_bd';
 
 export default function App() {
   // Theme state
@@ -164,27 +169,6 @@ export default function App() {
   const [inspectTotal, setInspectTotal] = useState(0);
   const [inspectLoading, setInspectLoading] = useState(false);
 
-  // Dedicated TIF Search Tab state
-  const [tifSearchQuery, setTifSearchQuery] = useState('');
-  const [tifSearchArquivo, setTifSearchArquivo] = useState('');
-  const [tifSearchOnlyTif, setTifSearchOnlyTif] = useState(true);
-  const [tifResults, setTifResults] = useState<IndexedFileRow[]>([]);
-  const [tifTotal, setTifTotal] = useState(0);
-  const [tifElapsedMs, setTifElapsedMs] = useState(0);
-  const [tifLoading, setTifLoading] = useState(false);
-
-  // Relatorios Folder Tab state
-  const [relatoriosInfo, setRelatoriosInfo] = useState<{
-    pasta_local: string;
-    db_local: string;
-    relatorios: RelatorioFileInfo[];
-  }>({
-    pasta_local: '/relatorios',
-    db_local: '/gestao_discos.db',
-    relatorios: [],
-  });
-  const [reindexing, setReindexing] = useState(false);
-
   // Usuarios Tab state
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [newUsername, setNewUsername] = useState('');
@@ -192,6 +176,17 @@ export default function App() {
   const [newUserAdmin, setNewUserAdmin] = useState(false);
   const [passwordInputs, setPasswordInputs] = useState<Record<number, string>>({});
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<number | null>(null);
+
+  // Database Administration Tab state (Admin Only)
+  const [dbAdminStatus, setDbAdminStatus] = useState<DbAdminStatus | null>(null);
+  const [dbAdminLoading, setDbAdminLoading] = useState(false);
+  const [creatingBackupMode, setCreatingBackupMode] = useState<'sqlite' | 'full_json' | null>(null);
+  const [optimizingDb, setOptimizingDb] = useState(false);
+  const [restoreUploadFile, setRestoreUploadFile] = useState<File | null>(null);
+  const [restoringDb, setRestoringDb] = useState(false);
+  const [confirmUploadRestore, setConfirmUploadRestore] = useState(false);
+  const [confirmRestoreFilename, setConfirmRestoreFilename] = useState<string | null>(null);
+  const [confirmDeleteBackupFilename, setConfirmDeleteBackupFilename] = useState<string | null>(null);
 
   // Fetch main inventory
   const fetchDiscos = useCallback(async () => {
@@ -227,53 +222,6 @@ export default function App() {
     }
   }, [currentUser, fetchDiscos]);
 
-  // Fetch dedicated TIF search
-  const fetchTifSearch = useCallback(async () => {
-    setTifLoading(true);
-    try {
-      const params = new URLSearchParams();
-      if (tifSearchQuery) params.set('q', tifSearchQuery);
-      if (tifSearchArquivo) params.set('arquivo', tifSearchArquivo);
-      params.set('apenas_tif', tifSearchOnlyTif ? '1' : '0');
-
-      const res = await fetch(`/api/pesquisa-tif?${params.toString()}`);
-      if (!res.ok) throw new Error('Erro na pesquisa de ficheiros TIF');
-      const data = await res.json();
-      setTifResults(data.ficheiros || []);
-      setTifTotal(data.total || 0);
-      setTifElapsedMs(data.elapsed_ms || 0);
-    } catch (e: any) {
-      showFlash(e.message || 'Erro na pesquisa TIF', 'danger');
-    } finally {
-      setTifLoading(false);
-    }
-  }, [tifSearchQuery, tifSearchArquivo, tifSearchOnlyTif, showFlash]);
-
-  useEffect(() => {
-    if (currentUser && activeTab === 'pesquisa_tif') {
-      fetchTifSearch();
-    }
-  }, [currentUser, activeTab, fetchTifSearch]);
-
-  // Fetch relatorios folder status
-  const fetchRelatorios = useCallback(async () => {
-    try {
-      const res = await fetch('/api/relatorios');
-      if (res.ok) {
-        const data = await res.json();
-        setRelatoriosInfo(data);
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  useEffect(() => {
-    if (currentUser && activeTab === 'relatorios') {
-      fetchRelatorios();
-    }
-  }, [currentUser, activeTab, fetchRelatorios]);
-
   // Fetch usuarios
   const fetchUsuarios = useCallback(async () => {
     try {
@@ -292,6 +240,38 @@ export default function App() {
       fetchUsuarios();
     }
   }, [currentUser, activeTab, fetchUsuarios]);
+
+  // Fetch Database Admin Status (Admin Only)
+  const fetchDbAdminStatus = useCallback(async () => {
+    if (!currentUser?.is_admin) return;
+    setDbAdminLoading(true);
+    try {
+      const res = await fetch(`/api/admin/db/status?admin_user_id=${currentUser.id}`, {
+        headers: { 'x-admin-user-id': String(currentUser.id) },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDbAdminStatus(data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setDbAdminLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser?.is_admin && activeTab === 'admin_bd') {
+      fetchDbAdminStatus();
+    }
+  }, [currentUser, activeTab, fetchDbAdminStatus]);
+
+  // Ensure non-admin users cannot remain on admin tabs
+  useEffect(() => {
+    if (currentUser && !currentUser.is_admin && (activeTab === 'usuarios' || activeTab === 'admin_bd')) {
+      setActiveTab('inventario');
+    }
+  }, [currentUser, activeTab]);
 
   // Inspect modal files loader
   const fetchInspectFiles = useCallback(async () => {
@@ -510,8 +490,6 @@ export default function App() {
       showFlash(data.message || 'Registo guardado com sucesso!', 'success');
       setIsFormOpen(false);
       fetchDiscos();
-      if (activeTab === 'relatorios') fetchRelatorios();
-      if (activeTab === 'pesquisa_tif') fetchTifSearch();
     } catch (err: any) {
       const msg = `Erro ao comunicar com o servidor: ${err?.message || 'verifique a ligação'}`;
       setFormError(msg);
@@ -560,24 +538,6 @@ export default function App() {
       showFlash('Erro ao importar ficheiro CSV.', 'danger');
     } finally {
       setCsvUploading(false);
-    }
-  };
-
-  // Batch reindex handler
-  const handleReindexAll = async () => {
-    setReindexing(true);
-    try {
-      const res = await fetch('/api/reindexar', { method: 'POST' });
-      const data = await res.json();
-      if (res.ok) {
-        showFlash(data.message, 'success');
-        fetchRelatorios();
-        fetchDiscos();
-      } else {
-        showFlash('Erro ao reindexar relatórios.', 'danger');
-      }
-    } finally {
-      setReindexing(false);
     }
   };
 
@@ -652,6 +612,145 @@ export default function App() {
       fetchUsuarios();
     } else {
       showFlash(data.error || 'Erro ao eliminar utilizador.', 'danger');
+    }
+  };
+
+  // Database Administration handlers (Admin Only)
+  const handleCreateBackup = async (mode: 'sqlite' | 'full_json') => {
+    if (!currentUser?.is_admin) return;
+    setCreatingBackupMode(mode);
+    try {
+      const res = await fetch('/api/admin/db/backup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-user-id': String(currentUser.id),
+        },
+        body: JSON.stringify({
+          admin_user_id: currentUser.id,
+          mode,
+          include_reports: true,
+        }),
+      });
+      const data = await safeParseJson(res);
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        fetchDbAdminStatus();
+      } else {
+        showFlash(data.error || 'Erro ao criar cópia de segurança.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao comunicar com o servidor durante o backup.', 'danger');
+    } finally {
+      setCreatingBackupMode(null);
+    }
+  };
+
+  const handleRestoreSavedBackup = async (filename: string) => {
+    if (!currentUser?.is_admin) return;
+    setRestoringDb(true);
+    try {
+      const res = await fetch(`/api/admin/db/backups/${encodeURIComponent(filename)}/restore`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-user-id': String(currentUser.id),
+        },
+        body: JSON.stringify({ admin_user_id: currentUser.id }),
+      });
+      const data = await safeParseJson(res);
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        setConfirmRestoreFilename(null);
+        fetchDbAdminStatus();
+        fetchDiscos();
+      } else {
+        showFlash(data.error || 'Erro ao restaurar base de dados.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao comunicar com o servidor durante o restauro.', 'danger');
+    } finally {
+      setRestoringDb(false);
+    }
+  };
+
+  const handleDeleteSavedBackup = async (filename: string) => {
+    if (!currentUser?.is_admin) return;
+    try {
+      const res = await fetch(
+        `/api/admin/db/backups/${encodeURIComponent(filename)}?admin_user_id=${currentUser.id}`,
+        {
+          method: 'DELETE',
+          headers: { 'x-admin-user-id': String(currentUser.id) },
+        }
+      );
+      const data = await safeParseJson(res);
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        setConfirmDeleteBackupFilename(null);
+        fetchDbAdminStatus();
+      } else {
+        showFlash(data.error || 'Erro ao eliminar ficheiro de backup.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao eliminar backup.', 'danger');
+    }
+  };
+
+  const handleUploadRestore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser?.is_admin || !restoreUploadFile) return;
+    setRestoringDb(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', restoreUploadFile);
+      fd.append('admin_user_id', String(currentUser.id));
+
+      const res = await fetch(`/api/admin/db/restore-upload?admin_user_id=${currentUser.id}`, {
+        method: 'POST',
+        headers: { 'x-admin-user-id': String(currentUser.id) },
+        body: fd,
+      });
+      const data = await safeParseJson(res);
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        setRestoreUploadFile(null);
+        setConfirmUploadRestore(false);
+        fetchDbAdminStatus();
+        fetchDiscos();
+      } else {
+        showFlash(data.error || 'Erro ao restaurar ficheiro de backup.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao comunicar com o servidor ao enviar ficheiro de restauro.', 'danger');
+    } finally {
+      setRestoringDb(false);
+    }
+  };
+
+  const handleOptimizeDb = async () => {
+    if (!currentUser?.is_admin) return;
+    setOptimizingDb(true);
+    try {
+      const res = await fetch('/api/admin/db/optimize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-user-id': String(currentUser.id),
+        },
+        body: JSON.stringify({ admin_user_id: currentUser.id }),
+      });
+      const data = await safeParseJson(res);
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        fetchDbAdminStatus();
+      } else {
+        showFlash(data.error || 'Erro ao otimizar base de dados.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao comunicar com o servidor.', 'danger');
+    } finally {
+      setOptimizingDb(false);
     }
   };
 
@@ -848,7 +947,7 @@ export default function App() {
           RIDIS
         </a>
 
-        {/* Zone 2: 4 Navigation Links */}
+        {/* Zone 2: Navigation Links */}
         <nav className="flex items-center gap-6 text-sm font-medium overflow-x-auto">
           <button
             type="button"
@@ -863,46 +962,36 @@ export default function App() {
           >
             Inventário de Discos
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('pesquisa_tif')}
-            className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'pesquisa_tif'
-                ? 'border-blue-500 text-blue-500 font-semibold'
-                : theme === 'dark'
-                ? 'border-transparent text-slate-400 hover:text-slate-100'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Pesquisa TIF
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('relatorios')}
-            className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'relatorios'
-                ? 'border-blue-500 text-blue-500 font-semibold'
-                : theme === 'dark'
-                ? 'border-transparent text-slate-400 hover:text-slate-100'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Relatórios Snap2HTML
-          </button>
           {currentUser.is_admin && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('usuarios')}
-              className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
-                activeTab === 'usuarios'
-                  ? 'border-blue-500 text-blue-500 font-semibold'
-                  : theme === 'dark'
-                  ? 'border-transparent text-slate-400 hover:text-slate-100'
-                  : 'border-transparent text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Utilizadores
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setActiveTab('usuarios')}
+                className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
+                  activeTab === 'usuarios'
+                    ? 'border-blue-500 text-blue-500 font-semibold'
+                    : theme === 'dark'
+                    ? 'border-transparent text-slate-400 hover:text-slate-100'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Utilizadores
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('admin_bd')}
+                className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'admin_bd'
+                    ? 'border-blue-500 text-blue-500 font-semibold'
+                    : theme === 'dark'
+                    ? 'border-transparent text-slate-400 hover:text-slate-100'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                Administração BD
+              </button>
+            </>
           )}
         </nav>
 
@@ -1237,9 +1326,23 @@ export default function App() {
               {/* Filter Legend & Quick TIF Search Shortcuts */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
                 <div className={`flex items-center gap-3 flex-wrap ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  <span>
-                    <strong>V</strong> = Verificado · <strong>I</strong> = Integrado · <strong>A</strong> = Armazenado no
-                    Servidor
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
+                      V
+                    </span>
+                    Verificado
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
+                      I
+                    </span>
+                    Integrado
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
+                      A
+                    </span>
+                    Armazenado no Servidor
                   </span>
                   <span>·</span>
                   <span>Exemplos pesquisa TIF:</span>
@@ -1330,640 +1433,296 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <div
-                className={`border rounded-xl overflow-hidden ${
-                  theme === 'dark' ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'
-                }`}
-              >
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr
-                        className={`border-b text-xs font-semibold ${
-                          theme === 'dark'
-                            ? 'bg-slate-900/90 border-slate-800 text-slate-400'
-                            : 'bg-slate-100 border-slate-200 text-slate-600'
-                        }`}
-                      >
-                        <th className="py-3 px-4">Arquivo / Remetente</th>
-                        <th className="py-3 px-4">Data / Ticket Envio</th>
-                        <th className="py-3 px-4">ID do Disco / Projeto / Localização</th>
-                        <th className="py-3 px-4">Capacidade / Marca / S/N</th>
-                        <th className="py-3 px-4 text-center">Estado (V · I · A)</th>
-                        <th className="py-3 px-4">Integração / Imagens / Índice TIF</th>
-                        <th className="py-3 px-4 text-right">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className={`divide-y text-sm ${theme === 'dark' ? 'divide-slate-800/80' : 'divide-slate-200'}`}>
-                      {discos.map((d) => (
-                        <React.Fragment key={d.id}>
-                          <tr
-                            className={`transition-colors ${
-                              theme === 'dark' ? 'hover:bg-slate-900/90' : 'hover:bg-slate-50'
-                            }`}
+              <div className="space-y-2.5">
+                {discos.map((d) => (
+                  <div
+                    key={d.id}
+                    className={`border rounded-lg overflow-hidden transition-colors ${
+                      theme === 'dark'
+                        ? 'bg-[#212529] border-white/15 hover:border-blue-500/40'
+                        : 'bg-white border-slate-200 hover:border-blue-400'
+                    }`}
+                  >
+                    {/* Top Row: 7 Columns */}
+                    <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-[1.1fr_1.8fr_2.3fr_1.35fr_auto_2.4fr_auto] gap-3 items-center text-xs">
+                      {/* 1. Arquivo e Remetente */}
+                      <div className="min-w-0">
+                        <div
+                          className="font-bold text-sm truncate"
+                          title={arquivosMap[d.arquivo] || d.arquivo || '-'}
+                        >
+                          {d.arquivo || '-'}
+                        </div>
+                        <div className={`mt-0.5 truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                          {d.remetente || '-'}
+                        </div>
+                      </div>
+
+                      {/* 2. Data e Ticket de Envio */}
+                      <div className="min-w-0">
+                        <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
+                          {d.data_entrada || '-'}
+                        </div>
+                        <div className="mt-0.5 truncate">
+                          <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
+                            Ticket de envio:{' '}
+                          </span>
+                          {d.ticket_num ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(d.ticket_num, `ticket-${d.id}`)}
+                              title="Clique para copiar o número do ticket"
+                              className="font-bold hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              {d.ticket_num}
+                              {copiedKey === `ticket-${d.id}` && (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              )}
+                            </button>
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* 3. ID do Disco, Projeto e Localização */}
+                      <div className="min-w-0">
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => openEditDiscoModal(d)}
+                            className="font-bold text-sm text-[#6ea8fe] hover:underline text-left cursor-pointer"
                           >
-                            {/* 1. Arquivo e Remetente */}
-                            <td className="py-3.5 px-4 align-top">
-                              <div
-                                className="font-bold text-sm"
-                                title={arquivosMap[d.arquivo] || d.arquivo || '-'}
-                              >
-                                {d.arquivo || '-'}
-                              </div>
-                              <div className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                                {d.remetente || '-'}
-                              </div>
-                            </td>
+                            {d.id_disco || 'Sem ID'}
+                          </button>
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          {d.projeto && (
+                            <span className="px-2 py-0.5 rounded bg-[#0d6efd] text-white text-[11px] font-semibold">
+                              Proj: {d.projeto}
+                            </span>
+                          )}
+                          {d.localizacao && (
+                            <span className={`inline-flex items-center gap-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Localização:
+                              <span className="px-2 py-0.5 rounded bg-[#0d6efd] text-white text-[11px] font-semibold">
+                                {d.localizacao}
+                              </span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
 
-                            {/* 2. Data e Ticket de Envio */}
-                            <td className="py-3.5 px-4 align-top font-mono tabular-nums">
-                              <div className="text-xs">{d.data_entrada || '-'}</div>
-                              <div className="mt-1 flex items-center gap-1.5 text-xs">
-                                <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>Ticket:</span>
-                                {d.ticket_num ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopy(d.ticket_num, `ticket-${d.id}`)}
-                                    title="Clique para copiar o número do ticket"
-                                    className="font-semibold text-blue-400 hover:text-blue-300 inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    {d.ticket_num}
-                                    {copiedKey === `ticket-${d.id}` ? (
-                                      <Check className="w-3 h-3 text-emerald-400" />
-                                    ) : (
-                                      <Copy className="w-3 h-3 opacity-70" />
-                                    )}
-                                  </button>
-                                ) : (
-                                  <span>-</span>
-                                )}
-                              </div>
-                            </td>
+                      {/* 4. Capacidade | Marca e S/N */}
+                      <div className="min-w-0">
+                        <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
+                          {d.tamanho_disco || '-'} | {d.marca || '-'}
+                        </div>
+                        <div className={`mt-0.5 truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                          S/N:{' '}
+                          {d.numero_serie ? (
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(d.numero_serie, `sn-${d.id}`)}
+                              className="hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
+                              title="Clique para copiar o número de série"
+                            >
+                              {d.numero_serie}
+                              {copiedKey === `sn-${d.id}` && (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              )}
+                            </button>
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </div>
+                      </div>
 
-                            {/* 3. ID Disco, Projeto e Localização (Unboxed metadata with separators) */}
-                            <td className="py-3.5 px-4 align-top">
+                      {/* 5. Estado V · I · A (Circular Green/Red Indicators) */}
+                      <div className="flex items-center gap-1 pr-2">
+                        <span
+                          title={`Verificado: ${d.verificado ? 'Sim' : 'Não'}`}
+                          className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] leading-none font-bold text-white select-none ${
+                            d.verificado ? 'bg-[#198754]' : 'bg-[#dc3545]'
+                          }`}
+                        >
+                          V
+                        </span>
+                        <span
+                          title={`Integrado: ${d.integrado ? 'Sim' : 'Não'}`}
+                          className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] leading-none font-bold text-white select-none ${
+                            d.integrado ? 'bg-[#198754]' : 'bg-[#dc3545]'
+                          }`}
+                        >
+                          I
+                        </span>
+                        <span
+                          title={`Armazenado no Servidor: ${d.armazenado_servidor ? 'Sim' : 'Não'}`}
+                          className={`w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] leading-none font-bold text-white select-none ${
+                            d.armazenado_servidor ? 'bg-[#198754]' : 'bg-[#dc3545]'
+                          }`}
+                        >
+                          A
+                        </span>
+                      </div>
+
+                      {/* 6. Ticket de Integração e Total de img */}
+                      <div className="min-w-0">
+                        {d.ticket_integracao && (
+                          <div className="truncate mb-0.5">
+                            <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
+                              Ticket de integração:{' '}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(d.ticket_integracao, `integ-${d.id}`)}
+                              className="font-bold hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
+                              title="Clique para copiar o ticket de integração"
+                            >
+                              {d.ticket_integracao}
+                              {copiedKey === `integ-${d.id}` && (
+                                <Check className="w-3 h-3 text-emerald-400" />
+                              )}
+                            </button>
+                          </div>
+                        )}
+                        <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
+                          Total de img: {d.total_imagens || 0}
+                          {d.indexed_tif_count > 0 && (
+                            <>
+                              {' '}
+                              ·{' '}
                               <button
                                 type="button"
-                                onClick={() => openEditDiscoModal(d)}
-                                className="font-bold font-mono text-blue-400 hover:underline text-left cursor-pointer"
+                                onClick={() => {
+                                  setInspectModalDisco(d);
+                                  setInspectMode('index');
+                                  setInspectQuery(busca);
+                                }}
+                                className="text-[#6ea8fe] hover:underline font-semibold cursor-pointer"
+                                title="Ver ficheiros .TIF indexados neste relatório Snap2HTML"
                               >
-                                {d.id_disco || 'Sem ID'}
+                                {formatNumber(d.indexed_tif_count)} .TIF
                               </button>
-                              <div
-                                className={`text-xs mt-1 flex flex-wrap items-center gap-1.5 ${
-                                  theme === 'dark' ? 'text-slate-300' : 'text-slate-600'
-                                }`}
-                              >
-                                {d.projeto && <span>Proj: {d.projeto}</span>}
-                                {d.projeto && d.localizacao && <span aria-hidden="true">·</span>}
-                                {d.localizacao && (
-                                  <span>
-                                    Localização: <strong className="font-semibold text-blue-400">{d.localizacao}</strong>
-                                  </span>
-                                )}
-                              </div>
-                              {d.observacoes && (
-                                <div
-                                  className={`text-xs mt-1.5 italic ${
-                                    theme === 'dark' ? 'text-slate-400' : 'text-slate-500'
-                                  }`}
-                                >
-                                  Obs: {d.observacoes}
-                                </div>
-                              )}
-                            </td>
+                            </>
+                          )}
+                        </div>
+                      </div>
 
-                            {/* 4. Capacidade, Marca e S/N */}
-                            <td className="py-3.5 px-4 align-top">
-                              <div className="text-xs">
-                                <span className="font-mono tabular-nums">{d.tamanho_disco || '-'}</span> ·{' '}
-                                <span>{d.marca || '-'}</span>
-                              </div>
-                              <div className="text-xs font-mono tabular-nums mt-1 flex items-center gap-1">
-                                <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>S/N:</span>
-                                {d.numero_serie ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopy(d.numero_serie, `sn-${d.id}`)}
-                                    className="hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
-                                    title="Clique para copiar o número de série"
-                                  >
-                                    {d.numero_serie}
-                                    {copiedKey === `sn-${d.id}` ? (
-                                      <Check className="w-3 h-3 text-emerald-400" />
-                                    ) : (
-                                      <Copy className="w-3 h-3 opacity-50" />
-                                    )}
-                                  </button>
-                                ) : (
-                                  <span>-</span>
-                                )}
-                              </div>
-                            </td>
+                      {/* 7. Ações (Ícones à direita conforme imagem) */}
+                      <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                        {d.relatorio_path && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInspectModalDisco(d);
+                              setInspectMode('index');
+                              setInspectQuery(busca);
+                            }}
+                            className="px-2 py-1 rounded border border-[#0dcaf0] text-[#0dcaf0] hover:bg-[#0dcaf0]/15 transition-colors cursor-pointer"
+                            title="Abrir Relatório do Disco (Snap2HTML)"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
-                            {/* 5. Estado V · I · A (Accessible text + semantic color) */}
-                            <td className="py-3.5 px-4 align-top text-center font-mono text-xs">
-                              <div className="inline-flex items-center gap-2">
-                                <span
-                                  title={`Verificado: ${d.verificado ? 'SIM' : 'NÃO'}`}
-                                  className={`font-semibold ${
-                                    d.verificado ? 'text-emerald-400' : 'text-red-400 opacity-75'
-                                  }`}
-                                >
-                                  V:{d.verificado ? 'SIM' : 'NÃO'}
-                                </span>
-                                <span aria-hidden="true" className="text-slate-600">
-                                  ·
-                                </span>
-                                <span
-                                  title={`Integrado: ${d.integrado ? 'SIM' : 'NÃO'}`}
-                                  className={`font-semibold ${
-                                    d.integrado ? 'text-emerald-400' : 'text-red-400 opacity-75'
-                                  }`}
-                                >
-                                  I:{d.integrado ? 'SIM' : 'NÃO'}
-                                </span>
-                                <span aria-hidden="true" className="text-slate-600">
-                                  ·
-                                </span>
-                                <span
-                                  title={`Armazenado no Servidor: ${d.armazenado_servidor ? 'SIM' : 'NÃO'}`}
-                                  className={`font-semibold ${
-                                    d.armazenado_servidor ? 'text-emerald-400' : 'text-red-400 opacity-75'
-                                  }`}
-                                >
-                                  A:{d.armazenado_servidor ? 'SIM' : 'NÃO'}
-                                </span>
-                              </div>
-                            </td>
+                        <button
+                          type="button"
+                          onClick={() => openEditDiscoModal(d)}
+                          className="px-2 py-1 rounded border border-[#ffc107] text-[#ffc107] hover:bg-[#ffc107]/15 transition-colors cursor-pointer"
+                          title="Editar Registo"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
 
-                            {/* 6. Ticket Integração, Total Imagens e Ficheiros TIF Indexados */}
-                            <td className="py-3.5 px-4 align-top font-mono tabular-nums text-xs">
-                              {d.ticket_integracao ? (
-                                <div className="flex items-center gap-1">
-                                  <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>Integ:</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopy(d.ticket_integracao, `integ-${d.id}`)}
-                                    className="font-semibold text-blue-400 hover:text-blue-300 inline-flex items-center gap-1 cursor-pointer"
-                                  >
-                                    {d.ticket_integracao}
-                                    {copiedKey === `integ-${d.id}` ? (
-                                      <Check className="w-3 h-3 text-emerald-400" />
-                                    ) : (
-                                      <Copy className="w-3 h-3 opacity-70" />
-                                    )}
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className={theme === 'dark' ? 'text-slate-500' : 'text-slate-400'}>
-                                  Integ: —
-                                </div>
-                              )}
-                              <div className={`mt-1 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-700'}`}>
-                                Total img: <strong>{formatNumber(d.total_imagens || 0)}</strong>
-                                {d.indexed_tif_count > 0 && (
-                                  <>
-                                    {' '}
-                                    ·{' '}
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setInspectModalDisco(d);
-                                        setInspectMode('index');
-                                        setInspectQuery(busca);
-                                      }}
-                                      className="text-blue-400 hover:underline font-semibold cursor-pointer"
-                                      title="Ver ficheiros .TIF indexados neste relatório Snap2HTML"
-                                    >
-                                      {formatNumber(d.indexed_tif_count)} .TIF indexados
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-
-                            {/* 7. Ações */}
-                            <td className="py-3.5 px-4 align-top text-right whitespace-nowrap">
-                              <div className="inline-flex items-center gap-1.5">
-                                {d.relatorio_path && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setInspectModalDisco(d);
-                                      setInspectMode('index');
-                                      setInspectQuery(busca);
-                                    }}
-                                    className={`px-2.5 py-1.5 rounded border text-xs font-medium inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                                      theme === 'dark'
-                                        ? 'border-blue-800/80 bg-blue-950/40 text-blue-300 hover:bg-blue-900/50'
-                                        : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                                    }`}
-                                    title="Explorar ficheiros .TIF indexados e relatório Snap2HTML"
-                                  >
-                                    <FileText className="w-3.5 h-3.5" />
-                                    Snap2HTML
-                                  </button>
-                                )}
-
+                        {currentUser.is_admin && (
+                          <>
+                            {confirmDeleteId === d.id ? (
+                              <div className="inline-flex items-center gap-1">
                                 <button
                                   type="button"
-                                  onClick={() => openEditDiscoModal(d)}
-                                  className={`p-1.5 rounded border transition-colors cursor-pointer ${
-                                    theme === 'dark'
-                                      ? 'border-slate-700 text-amber-400 hover:bg-slate-800'
-                                      : 'border-slate-200 text-amber-600 hover:bg-slate-100'
-                                  }`}
-                                  title="Editar registo"
+                                  onClick={() => handleDeleteDisco(d.id)}
+                                  className="px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer"
                                 >
-                                  <Edit3 className="w-3.5 h-3.5" />
+                                  Sim
                                 </button>
-
-                                {currentUser.is_admin && (
-                                  <>
-                                    {confirmDeleteId === d.id ? (
-                                      <div className="inline-flex items-center gap-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteDisco(d.id)}
-                                          className="px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-semibold cursor-pointer"
-                                        >
-                                          Confirmar
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => setConfirmDeleteId(null)}
-                                          className="px-2 py-1 rounded border border-slate-700 text-xs cursor-pointer"
-                                        >
-                                          Cancelar
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => setConfirmDeleteId(d.id)}
-                                        className={`p-1.5 rounded border transition-colors cursor-pointer ${
-                                          theme === 'dark'
-                                            ? 'border-slate-700 text-red-400 hover:bg-red-950/50'
-                                            : 'border-slate-200 text-red-600 hover:bg-red-50'
-                                        }`}
-                                        title="Eliminar registo e relatório"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </>
-                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="px-2 py-1 rounded border border-slate-600 text-xs cursor-pointer"
+                                >
+                                  Não
+                                </button>
                               </div>
-                            </td>
-                          </tr>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmDeleteId(d.id)}
+                                className="px-2 py-1 rounded border border-[#dc3545] text-[#dc3545] hover:bg-[#dc3545]/15 transition-colors cursor-pointer"
+                                title="Eliminar Registo"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
 
-                          {/* Highlighted TIF File Matches Row when searching by TIF / Cota */}
-                          {d.matched_files && d.matched_files.length > 0 && (
-                            <tr
-                              className={
-                                theme === 'dark' ? 'bg-blue-950/25 border-t border-blue-900/40' : 'bg-blue-50/60'
-                              }
-                            >
-                              <td colSpan={7} className="py-2.5 px-4 text-xs">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-semibold text-blue-400">
-                                      Ficheiros encontrados no relatório Snap2HTML ({d.matched_files_total}):
-                                    </span>
-                                    <span className="font-mono text-slate-300">
-                                      {d.matched_files.slice(0, 4).join(' · ')}
-                                      {(d.matched_files_total || 0) > 4 &&
-                                        ` · (+${(d.matched_files_total || 0) - 4} mais)`}
-                                    </span>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setInspectModalDisco(d);
-                                      setInspectMode('index');
-                                      setInspectQuery(busca);
-                                    }}
-                                    className="text-blue-400 hover:underline font-medium shrink-0 cursor-pointer"
-                                  >
-                                    Ver todos os ficheiros correspondentes →
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          )}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    {/* Highlighted TIF File Matches Row when searching by TIF / Cota */}
+                    {d.matched_files && d.matched_files.length > 0 && (
+                      <div
+                        className={`px-4 py-2 border-t text-xs flex flex-wrap items-center justify-between gap-2 ${
+                          theme === 'dark'
+                            ? 'bg-blue-950/30 border-white/10'
+                            : 'bg-blue-50/70 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-semibold text-[#6ea8fe]">
+                            Ficheiros encontrados no relatório Snap2HTML ({d.matched_files_total}):
+                          </span>
+                          <span className="font-mono text-slate-300">
+                            {d.matched_files.slice(0, 4).join(' · ')}
+                            {(d.matched_files_total || 0) > 4 &&
+                              ` · (+${(d.matched_files_total || 0) - 4} mais)`}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInspectModalDisco(d);
+                            setInspectMode('index');
+                            setInspectQuery(busca);
+                          }}
+                          className="text-[#6ea8fe] hover:underline font-medium shrink-0 cursor-pointer"
+                        >
+                          Ver todos os ficheiros correspondentes →
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Bottom Row: Observações (Full-width strip with comment icon, exactly as in screenshot) */}
+                    {d.observacoes && (
+                      <div
+                        className={`px-4 py-2 border-t text-xs flex items-center gap-2 ${
+                          theme === 'dark'
+                            ? 'bg-black/20 border-white/10 text-slate-400'
+                            : 'bg-slate-50 border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        <MessageSquareText className="w-3.5 h-3.5 shrink-0 opacity-75" />
+                        <span>{d.observacoes}</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
 
-        {/* TAB 2: PESQUISA RÁPIDA DE FICHEIROS .TIF */}
-        {activeTab === 'pesquisa_tif' && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">
-                  Pesquisa Rápida de Ficheiros .TIF nos Relatórios Snap2HTML
-                </h1>
-                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Pesquisa indexada instantânea na tabela <span className="font-mono">relatorio_ficheiros</span> (
-                  <span className="font-mono">idx_relatorio_ficheiros_nome</span>) · Suporta wildcards (
-                  <span className="font-mono">*</span>, <span className="font-mono">?</span>) e normalização automática{' '}
-                  <span className="font-mono">PT/</span> → <span className="font-mono">PT-</span>.
-                </p>
-              </div>
-              <div className="font-mono text-xs text-blue-400">
-                {formatNumber(tifTotal)} ficheiros encontrados em {tifElapsedMs} ms
-              </div>
-            </div>
-
-            {/* TIF Search Controls */}
-            <div
-              className={`p-4 rounded-xl border grid grid-cols-1 md:grid-cols-12 gap-3 items-center ${
-                theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
-              }`}
-            >
-              <div className="md:col-span-6 relative">
-                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={tifSearchQuery}
-                  onChange={(e) => setTifSearchQuery(e.target.value)}
-                  placeholder="Ex: PT-ADPRT-NOT*m0005.tif, PT/ANTT/*, *0042_m0012.tif, AHU..."
-                  className={`w-full pl-9 pr-8 py-2 rounded-lg border text-xs font-mono focus:outline-none focus:border-blue-500 ${
-                    theme === 'dark'
-                      ? 'bg-slate-950 border-slate-800 text-slate-100'
-                      : 'bg-slate-50 border-slate-300 text-slate-900'
-                  }`}
-                />
-                {tifSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setTifSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              <div className="md:col-span-3">
-                <select
-                  value={tifSearchArquivo}
-                  onChange={(e) => setTifSearchArquivo(e.target.value)}
-                  className={`w-full px-3 py-2 rounded-lg border text-xs focus:outline-none focus:border-blue-500 ${
-                    theme === 'dark'
-                      ? 'bg-slate-950 border-slate-800 text-slate-200'
-                      : 'bg-slate-50 border-slate-300 text-slate-800'
-                  }`}
-                >
-                  <option value="">Todos os Arquivos</option>
-                  {Object.entries(arquivosMap).map(([sigla, nome]) => (
-                    <option key={sigla} value={sigla}>
-                      {sigla} — {nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="md:col-span-3 flex items-center justify-end gap-2">
-                <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={tifSearchOnlyTif}
-                    onChange={(e) => setTifSearchOnlyTif(e.target.checked)}
-                    className="rounded border-slate-700"
-                  />
-                  <span>Apenas ficheiros .TIF / .TIFF</span>
-                </label>
-              </div>
-            </div>
-
-            {/* TIF Results Table */}
-            <div
-              className={`border rounded-xl overflow-hidden ${
-                theme === 'dark' ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'
-              }`}
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr
-                      className={`border-b text-xs font-semibold ${
-                        theme === 'dark'
-                          ? 'bg-slate-900/90 border-slate-800 text-slate-400'
-                          : 'bg-slate-100 border-slate-200 text-slate-600'
-                      }`}
-                    >
-                      <th className="py-3 px-4">Nome do Ficheiro (.TIF)</th>
-                      <th className="py-3 px-4">Pasta no Disco</th>
-                      <th className="py-3 px-4 text-right">Tamanho</th>
-                      <th className="py-3 px-4">Disco USB / Matriz</th>
-                      <th className="py-3 px-4">Arquivo / Localização Física</th>
-                      <th className="py-3 px-4">Ticket Envio</th>
-                      <th className="py-3 px-4 text-right">Relatório</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y text-xs ${theme === 'dark' ? 'divide-slate-800/80' : 'divide-slate-200'}`}>
-                    {tifLoading ? (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-400">
-                          A pesquisar no índice local SQLite...
-                        </td>
-                      </tr>
-                    ) : tifResults.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-10 text-center text-slate-400">
-                          Nenhum ficheiro .TIF encontrado para o critério indicado.
-                        </td>
-                      </tr>
-                    ) : (
-                      tifResults.map((row) => (
-                        <tr
-                          key={row.id}
-                          className={theme === 'dark' ? 'hover:bg-slate-900/90' : 'hover:bg-slate-50'}
-                        >
-                          <td className="py-2.5 px-4 font-mono font-semibold text-blue-400">
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(row.nome_ficheiro, `tif-${row.id}`)}
-                              className="inline-flex items-center gap-1.5 hover:underline text-left cursor-pointer"
-                              title="Clique para copiar o nome do ficheiro .TIF"
-                            >
-                              {row.nome_ficheiro}
-                              {copiedKey === `tif-${row.id}` ? (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3 h-3 opacity-50" />
-                              )}
-                            </button>
-                          </td>
-                          <td className="py-2.5 px-4 font-mono text-slate-400">{row.pasta || '-'}</td>
-                          <td className="py-2.5 px-4 font-mono tabular-nums text-right">
-                            {formatBytes(row.tamanho_bytes)}
-                          </td>
-                          <td className="py-2.5 px-4 font-mono font-semibold">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setBusca(row.id_disco || '');
-                                setActiveTab('inventario');
-                              }}
-                              className="hover:underline text-blue-400 cursor-pointer"
-                            >
-                              {row.id_disco}
-                            </button>
-                          </td>
-                          <td className="py-2.5 px-4">
-                            <strong>{row.arquivo}</strong> · <span>{row.localizacao || '-'}</span>
-                          </td>
-                          <td className="py-2.5 px-4 font-mono tabular-nums">{row.ticket_num || '-'}</td>
-                          <td className="py-2.5 px-4 text-right">
-                            {row.relatorio_path && (
-                              <a
-                                href={`/relatorios/${row.relatorio_path}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex items-center gap-1 text-blue-400 hover:underline font-medium"
-                              >
-                                Abrir HTML <ExternalLink className="w-3 h-3" />
-                              </a>
-                            )}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: PASTA RELATORIOS/ E INDEXAÇÃO SNAP2HTML */}
-        {activeTab === 'relatorios' && (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">
-                  Pasta Local <span className="font-mono text-blue-400">relatorios/</span> e Indexação Snap2HTML
-                </h1>
-                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Todos os relatórios Snap2HTML importados são guardados em{' '}
-                  <span className="font-mono">{relatoriosInfo.pasta_local}</span> e indexados automaticamente em{' '}
-                  <span className="font-mono">{relatoriosInfo.db_local}</span>.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <a
-                  href="/api/relatorios/exemplo-snap2html"
-                  className={`px-3.5 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-200'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Descarregar Relatório Snap2HTML de Teste (.html)
-                </a>
-
-                <button
-                  type="button"
-                  onClick={handleReindexAll}
-                  disabled={reindexing}
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${reindexing ? 'animate-spin' : ''}`} />
-                  {reindexing ? 'A Reindexar...' : 'Reindexar Pasta relatorios/'}
-                </button>
-              </div>
-            </div>
-
-            <div
-              className={`border rounded-xl overflow-hidden ${
-                theme === 'dark' ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'
-              }`}
-            >
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr
-                      className={`border-b text-xs font-semibold ${
-                        theme === 'dark'
-                          ? 'bg-slate-900/90 border-slate-800 text-slate-400'
-                          : 'bg-slate-100 border-slate-200 text-slate-600'
-                      }`}
-                    >
-                      <th className="py-3 px-4">Ficheiro na Pasta relatorios/</th>
-                      <th className="py-3 px-4 text-right">Tamanho HTML</th>
-                      <th className="py-3 px-4">Disco Associado</th>
-                      <th className="py-3 px-4">Arquivo / Projeto</th>
-                      <th className="py-3 px-4 text-right">Total Indexados</th>
-                      <th className="py-3 px-4 text-right">Matrizes .TIF</th>
-                      <th className="py-3 px-4 text-right">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y text-xs ${theme === 'dark' ? 'divide-slate-800/80' : 'divide-slate-200'}`}>
-                    {relatoriosInfo.relatorios.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-400">
-                          Nenhum ficheiro .html encontrado na pasta relatorios/.
-                        </td>
-                      </tr>
-                    ) : (
-                      relatoriosInfo.relatorios.map((r) => (
-                        <tr
-                          key={r.filename}
-                          className={theme === 'dark' ? 'hover:bg-slate-900/90' : 'hover:bg-slate-50'}
-                        >
-                          <td className="py-3 px-4 font-mono font-medium text-blue-400">
-                            <span className="inline-flex items-center gap-1.5">
-                              <FolderOpen className="w-3.5 h-3.5 shrink-0" />
-                              relatorios/{r.filename}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 font-mono tabular-nums text-right">
-                            {formatBytes(r.size_bytes)}
-                          </td>
-                          <td className="py-3 px-4 font-mono font-semibold">
-                            {r.disco ? r.disco.id_disco : 'Não associado'}
-                          </td>
-                          <td className="py-3 px-4">
-                            {r.disco ? `${r.disco.arquivo} · ${r.disco.projeto || '-'}` : '-'}
-                          </td>
-                          <td className="py-3 px-4 font-mono tabular-nums text-right">
-                            {r.disco ? formatNumber(r.disco.total_indexados) : 0}
-                          </td>
-                          <td className="py-3 px-4 font-mono tabular-nums text-right font-semibold text-emerald-400">
-                            {r.disco ? formatNumber(r.disco.total_tif) : 0}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <a
-                              href={`/relatorios/${r.filename}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-blue-400 hover:underline font-medium"
-                            >
-                              Ver Relatório Original <ExternalLink className="w-3 h-3" />
-                            </a>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: GESTÃO DE UTILIZADORES (ADMIN) */}
+        {/* TAB 2: GESTÃO DE UTILIZADORES (ADMIN) */}
         {activeTab === 'usuarios' && currentUser.is_admin && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div>
@@ -2144,6 +1903,421 @@ export default function App() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: MÓDULO DE ADMINISTRAÇÃO DA BASE DE DADOS (EXCLUSIVO PARA ADMINISTRADORES) */}
+        {activeTab === 'admin_bd' && currentUser.is_admin && (
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
+                  <Database className="w-6 h-6 text-blue-500" />
+                  Administração da Base de Dados Local — Backup e Restauro
+                </h1>
+                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                  Módulo exclusivo para Administradores · Gestão de cópias de segurança, restauro de snapshots e
+                  manutenção da base de dados SQLite (<span className="font-mono">gestao_discos.db</span>) e relatórios (
+                  <span className="font-mono">relatorios/</span>).
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleOptimizeDb}
+                  disabled={optimizingDb}
+                  className={`px-3.5 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-emerald-400'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-emerald-700'
+                  }`}
+                >
+                  <ShieldCheck className={`w-4 h-4 ${optimizingDb ? 'animate-pulse' : ''}`} />
+                  {optimizingDb ? 'A Otimizar SQLite...' : 'Verificar Integridade & Otimizar (VACUUM)'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={fetchDbAdminStatus}
+                  disabled={dbAdminLoading}
+                  className={`px-3.5 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${dbAdminLoading ? 'animate-spin' : ''}`} />
+                  Atualizar Estado
+                </button>
+              </div>
+            </div>
+
+            {/* Database Metrics Summary */}
+            <div
+              className={`grid grid-cols-2 md:grid-cols-5 border rounded-xl divide-y md:divide-y-0 md:divide-x ${
+                theme === 'dark'
+                  ? 'bg-slate-900/60 border-slate-800 divide-slate-800'
+                  : 'bg-white border-slate-200 divide-slate-200'
+              }`}
+            >
+              <div className="p-4">
+                <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Ficheiro SQLite (gestao_discos.db)
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums mt-1">
+                  {formatBytes(dbAdminStatus?.db_size_bytes || 0)}
+                </div>
+                <div className="text-[11px] text-emerald-400 font-mono mt-0.5">
+                  Integridade: {dbAdminStatus?.integrity_status || 'ok'}
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Tabela discos_usb
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums mt-1">
+                  {formatNumber(dbAdminStatus?.counts.discos_usb || 0)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">registos de discos</div>
+              </div>
+
+              <div className="p-4">
+                <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Tabela relatorio_ficheiros
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums mt-1 text-blue-400">
+                  {formatNumber(dbAdminStatus?.counts.relatorio_ficheiros || 0)}
+                </div>
+                <div className="text-[11px] text-slate-400 mt-0.5">ficheiros .TIF indexados</div>
+              </div>
+
+              <div className="p-4">
+                <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Pasta Local relatorios/
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums mt-1">
+                  {formatNumber(dbAdminStatus?.counts.relatorios_html || 0)}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  {formatBytes(dbAdminStatus?.counts.relatorios_size_bytes || 0)} em HTML
+                </div>
+              </div>
+
+              <div className="p-4">
+                <div className={`text-xs ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                  Snapshots em backups/
+                </div>
+                <div className="text-xl font-bold font-mono tabular-nums mt-1 text-amber-400">
+                  {formatNumber(dbAdminStatus?.backups.length || 0)}
+                </div>
+                <div className="text-[11px] text-slate-400 font-mono mt-0.5">
+                  Últ. mod: {dbAdminStatus?.db_modified_at || '-'}
+                </div>
+              </div>
+            </div>
+
+            {/* Two-Column Action Panels: Backup vs Restore */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Panel 1: Criar e Descarregar Cópia de Segurança (Backup) */}
+              <div
+                className={`p-5 rounded-xl border space-y-4 ${
+                  theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
+                }`}
+              >
+                <div>
+                  <h2 className="text-base font-bold flex items-center gap-2">
+                    <Archive className="w-4 h-4 text-blue-400" />
+                    1. Cópia de Segurança (Backup)
+                  </h2>
+                  <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                    Crie um ponto de restauro local na pasta <span className="font-mono">backups/</span> do servidor ou
+                    descarregue uma cópia diretamente para o seu computador.
+                  </p>
+                </div>
+
+                <div className="space-y-2.5 pt-1">
+                  <div className="text-xs font-semibold text-slate-400">
+                    Guardar Ponto de Restauro no Servidor (<span className="font-mono">backups/</span>):
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => handleCreateBackup('sqlite')}
+                      disabled={creatingBackupMode !== null}
+                      className="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Database className="w-4 h-4" />
+                      {creatingBackupMode === 'sqlite' ? 'A criar Snapshot...' : 'Criar Snapshot SQLite (.db)'}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleCreateBackup('full_json')}
+                      disabled={creatingBackupMode !== null}
+                      className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                    >
+                      <Archive className="w-4 h-4" />
+                      {creatingBackupMode === 'full_json'
+                        ? 'A empacotar...'
+                        : 'Criar Backup Completo (BD + HTML)'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
+                  <div className="text-xs font-semibold text-slate-400">
+                    Descarregar Cópia de Segurança para o Computador:
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <a
+                      href={`/api/admin/db/download-sqlite?admin_user_id=${currentUser.id}`}
+                      className={`px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                        theme === 'dark'
+                          ? 'border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-200'
+                          : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800'
+                      }`}
+                    >
+                      <Download className="w-4 h-4 text-blue-400" />
+                      Descarregar SQLite (.db)
+                    </a>
+
+                    <a
+                      href={`/api/admin/db/download-full?admin_user_id=${currentUser.id}`}
+                      className={`px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                        theme === 'dark'
+                          ? 'border-slate-700 bg-slate-950 hover:bg-slate-800 text-emerald-400'
+                          : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-emerald-700'
+                      }`}
+                    >
+                      <Download className="w-4 h-4" />
+                      Descarregar Completo (.json)
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Panel 2: Restaurar Base de Dados a partir de Ficheiro Externo */}
+              <div
+                className={`p-5 rounded-xl border space-y-4 ${
+                  theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
+                }`}
+              >
+                <div>
+                  <h2 className="text-base font-bold flex items-center gap-2">
+                    <RotateCcw className="w-4 h-4 text-amber-400" />
+                    2. Restaurar a partir de Ficheiro Externo
+                  </h2>
+                  <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                    Carregue um ficheiro SQLite (<span className="font-mono">.db</span>,{' '}
+                    <span className="font-mono">.sqlite</span>) ou um pacote de Backup Completo RIDIS (
+                    <span className="font-mono">.json</span>). Antes do restauro, é criada automaticamente uma cópia de
+                    salvaguarda do estado atual.
+                  </p>
+                </div>
+
+                <form onSubmit={handleUploadRestore} className="space-y-3 pt-1">
+                  <div
+                    className={`p-3.5 rounded-lg border ${
+                      theme === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="file"
+                      accept=".db,.sqlite,.sqlite3,.json"
+                      onChange={(e) => {
+                        setRestoreUploadFile(e.target.files?.[0] || null);
+                        setConfirmUploadRestore(false);
+                      }}
+                      className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-amber-600 file:text-white hover:file:bg-amber-500 cursor-pointer"
+                    />
+                  </div>
+
+                  {restoreUploadFile && !confirmUploadRestore && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmUploadRestore(true)}
+                        className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        Restaurar Ficheiro &quot;{restoreUploadFile.name}&quot;
+                      </button>
+                    </div>
+                  )}
+
+                  {restoreUploadFile && confirmUploadRestore && (
+                    <div className="p-3 rounded-lg border border-amber-700/80 bg-amber-950/40 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <span className="text-amber-200 font-medium">
+                        Confirmar a substituição dos dados atuais pelo ficheiro{' '}
+                        <strong className="font-mono">{restoreUploadFile.name}</strong>?
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="submit"
+                          disabled={restoringDb}
+                          className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-semibold cursor-pointer"
+                        >
+                          {restoringDb ? 'A Restaurar...' : 'Confirmar Restauro'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmUploadRestore(false)}
+                          className="px-3 py-1.5 rounded border border-slate-700 text-slate-300 hover:bg-slate-800 cursor-pointer"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </form>
+              </div>
+            </div>
+
+            {/* Table of Saved Backups in ./backups/ */}
+            <div
+              className={`border rounded-xl overflow-hidden ${
+                theme === 'dark' ? 'bg-slate-900/50 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold">
+                    Pontos de Restauro Guardados no Servidor (<span className="font-mono">backups/</span>)
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Pode restaurar qualquer cópia de segurança abaixo com um clique ou descarregá-la para arquivo externo.
+                  </p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr
+                      className={`border-b text-xs font-semibold ${
+                        theme === 'dark'
+                          ? 'bg-slate-900/90 border-slate-800 text-slate-400'
+                          : 'bg-slate-100 border-slate-200 text-slate-600'
+                      }`}
+                    >
+                      <th className="py-3 px-4">Ficheiro de Backup</th>
+                      <th className="py-3 px-4">Tipo de Cópia</th>
+                      <th className="py-3 px-4">Data / Hora</th>
+                      <th className="py-3 px-4 text-right">Tamanho</th>
+                      <th className="py-3 px-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y text-xs ${theme === 'dark' ? 'divide-slate-800/80' : 'divide-slate-200'}`}>
+                    {!dbAdminStatus || dbAdminStatus.backups.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="py-8 text-center text-slate-400">
+                          Ainda não existem pontos de restauro guardados na pasta <span className="font-mono">backups/</span>.
+                          Clique em &quot;Criar Snapshot SQLite&quot; ou &quot;Criar Backup Completo&quot; acima.
+                        </td>
+                      </tr>
+                    ) : (
+                      dbAdminStatus.backups.map((b) => (
+                        <tr
+                          key={b.filename}
+                          className={theme === 'dark' ? 'hover:bg-slate-900/90' : 'hover:bg-slate-50'}
+                        >
+                          <td className="py-3 px-4 font-mono font-semibold text-blue-400">{b.filename}</td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={
+                                b.type === 'full_json'
+                                  ? 'text-emerald-400 font-semibold'
+                                  : b.filename.startsWith('pre_restauro_')
+                                  ? 'text-amber-400 font-medium'
+                                  : 'text-slate-300'
+                              }
+                            >
+                              {b.label}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono tabular-nums text-slate-400">{b.created_at}</td>
+                          <td className="py-3 px-4 font-mono tabular-nums text-right">{formatBytes(b.size_bytes)}</td>
+                          <td className="py-3 px-4 text-right whitespace-nowrap">
+                            <div className="inline-flex items-center gap-2">
+                              <a
+                                href={`/api/admin/db/backups/${encodeURIComponent(
+                                  b.filename
+                                )}/download?admin_user_id=${currentUser.id}`}
+                                className="px-2.5 py-1 rounded border border-blue-700/70 text-blue-400 hover:bg-blue-950/50 inline-flex items-center gap-1 font-medium"
+                                title="Descarregar este ficheiro de backup"
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                                Descarregar
+                              </a>
+
+                              {confirmRestoreFilename === b.filename ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={restoringDb}
+                                    onClick={() => handleRestoreSavedBackup(b.filename)}
+                                    className="px-2.5 py-1 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold cursor-pointer"
+                                  >
+                                    {restoringDb ? 'A restaurar...' : 'Confirmar Restauro'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmRestoreFilename(null)}
+                                    className="px-2 py-1 rounded border border-slate-700 cursor-pointer"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmRestoreFilename(b.filename)}
+                                  className="px-2.5 py-1 rounded border border-amber-700/70 text-amber-400 hover:bg-amber-950/50 inline-flex items-center gap-1 font-medium cursor-pointer"
+                                  title="Restaurar a base de dados para este ponto"
+                                >
+                                  <RotateCcw className="w-3.5 h-3.5" />
+                                  Restaurar
+                                </button>
+                              )}
+
+                              {confirmDeleteBackupFilename === b.filename ? (
+                                <div className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteSavedBackup(b.filename)}
+                                    className="px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white font-semibold cursor-pointer"
+                                  >
+                                    Apagar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmDeleteBackupFilename(null)}
+                                    className="px-2 py-1 rounded border border-slate-700 cursor-pointer"
+                                  >
+                                    Não
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteBackupFilename(b.filename)}
+                                  className="p-1.5 rounded border border-red-800/60 text-red-400 hover:bg-red-950/50 cursor-pointer"
+                                  title="Eliminar ficheiro de backup"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         )}

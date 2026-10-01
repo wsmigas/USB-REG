@@ -80,3 +80,29 @@ export interface Usuario {
   is_admin: boolean;
   created_at: string;
 }
+
+export interface DbBackupInfo {
+  filename: string;
+  size_bytes: number;
+  created_at: string;
+  type: 'sqlite' | 'full_json';
+  label: string;
+}
+
+export interface DbAdminStatus {
+  db_path: string;
+  db_size_bytes: number;
+  db_modified_at: string;
+  integrity_status: string;
+  backups_dir: string;
+  relatorios_dir: string;
+  counts: {
+    discos_usb: number;
+    relatorio_ficheiros: number;
+    usuarios: number;
+    relatorios_html: number;
+    relatorios_size_bytes: number;
+  };
+  backups: DbBackupInfo[];
+}
+
