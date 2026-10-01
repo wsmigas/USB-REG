@@ -56,21 +56,29 @@ export default function App() {
     localStorage.setItem('ridis_theme', theme);
   }, [theme]);
 
-  // Auth state (defaults to authenticated admin session so portal is immediately accessible, with full login/logout support)
+  const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutos
+
+  // Auth state with 10-minute session inactivity check
   const [currentUser, setCurrentUser] = useState<{
     id: number;
     username: string;
     is_admin: boolean;
   } | null>(() => {
     const saved = localStorage.getItem('ridis_user');
+    const lastActivity = Number(localStorage.getItem('ridis_last_activity') || '0');
     if (saved) {
+      if (lastActivity > 0 && Date.now() - lastActivity > 10 * 60 * 1000) {
+        localStorage.removeItem('ridis_user');
+        localStorage.removeItem('ridis_last_activity');
+        return null;
+      }
       try {
         return JSON.parse(saved);
       } catch {
         // ignore
       }
     }
-    return { id: 2, username: 'jmagalhaes', is_admin: true };
+    return null;
   });
 
   const [loginUsername, setLoginUsername] = useState('');
@@ -346,16 +354,63 @@ export default function App() {
       }
       setCurrentUser(data.user);
       localStorage.setItem('ridis_user', JSON.stringify(data.user));
+      localStorage.setItem('ridis_last_activity', String(Date.now()));
       setLoginPassword('');
     } catch {
       setLoginError('Erro ao comunicar com o servidor.');
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = useCallback((reason?: string | React.MouseEvent) => {
     setCurrentUser(null);
     localStorage.removeItem('ridis_user');
-  };
+    localStorage.removeItem('ridis_last_activity');
+    if (typeof reason === 'string' && reason) {
+      setLoginError(reason);
+    }
+  }, []);
+
+  // Auto-logout after 10 minutes of inactivity
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let lastRecorded = Date.now();
+    localStorage.setItem('ridis_last_activity', String(lastRecorded));
+
+    const updateActivity = () => {
+      const now = Date.now();
+      // Throttle localStorage writes to once every 5 seconds
+      if (now - lastRecorded > 5000) {
+        lastRecorded = now;
+        localStorage.setItem('ridis_last_activity', String(now));
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
+    for (const ev of events) {
+      window.addEventListener(ev, updateActivity, { passive: true });
+    }
+
+    const intervalId = window.setInterval(() => {
+      // Do not auto-logout while a heavy upload/migration is in progress
+      if (formSaving || restoringDb || migratingReports || gitUpdating) {
+        lastRecorded = Date.now();
+        localStorage.setItem('ridis_last_activity', String(lastRecorded));
+        return;
+      }
+      const storedLast = Number(localStorage.getItem('ridis_last_activity') || lastRecorded);
+      if (Date.now() - storedLast >= INACTIVITY_TIMEOUT_MS) {
+        handleLogout('Sessão expirada após 10 minutos de inatividade.');
+      }
+    }, 15000);
+
+    return () => {
+      for (const ev of events) {
+        window.removeEventListener(ev, updateActivity);
+      }
+      window.clearInterval(intervalId);
+    };
+  }, [currentUser, formSaving, restoringDb, migratingReports, gitUpdating, INACTIVITY_TIMEOUT_MS, handleLogout]);
 
   // Open New / Edit Disk Modal
   const openNewDiscoModal = () => {
