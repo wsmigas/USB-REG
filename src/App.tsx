@@ -2059,7 +2059,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* Highlighted TIF File Matches Row when searching by TIF / Cota */}
+                    {/* Highlighted Document Reference Matches Row when searching by Cota / Código de Referência */}
                     {d.matched_files && d.matched_files.length > 0 && (
                       <div
                         className={`px-4 py-2 border-t text-xs flex flex-wrap items-center justify-between gap-2 ${
@@ -2070,12 +2070,12 @@ export default function App() {
                       >
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-[#6ea8fe]">
-                            Ficheiros encontrados no relatório Snap2HTML ({d.matched_files_total}):
+                            Documentos / Códigos de Referência encontrados ({d.matched_files_total}):
                           </span>
                           <span className="font-mono text-slate-300">
-                            {d.matched_files.slice(0, 4).join(' · ')}
-                            {(d.matched_files_total || 0) > 4 &&
-                              ` · (+${(d.matched_files_total || 0) - 4} mais)`}
+                            {d.matched_files.slice(0, 6).join(' · ')}
+                            {(d.matched_files_total || 0) > 6 &&
+                              ` · (+${(d.matched_files_total || 0) - 6} mais)`}
                           </span>
                         </div>
                         <button
@@ -2087,7 +2087,7 @@ export default function App() {
                           }}
                           className="text-[#6ea8fe] hover:underline font-medium shrink-0 cursor-pointer"
                         >
-                          Ver todos os ficheiros correspondentes →
+                          Ver todos os documentos correspondentes →
                         </button>
                       </div>
                     )}
@@ -2360,7 +2360,7 @@ export default function App() {
                   }`}
                 >
                   <ShieldCheck className={`w-4 h-4 ${optimizingDb ? 'animate-pulse' : ''}`} />
-                  {optimizingDb ? 'A Otimizar SQLite...' : 'Verificar Integridade & Otimizar (VACUUM)'}
+                  {optimizingDb ? 'A Compactar & Otimizar SQLite...' : 'Compactar Códigos de Referência & Otimizar (VACUUM)'}
                 </button>
 
                 <button

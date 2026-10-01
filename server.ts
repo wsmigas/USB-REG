@@ -64,15 +64,10 @@ function getDiscoFileCount(discoId: number): { total_files: number; tif_files: n
   const cached = discoIndexedCountCache.get(discoId);
   if (cached) return cached;
   try {
-    // Count strictly .TIF and .TIFF files for this disk
     const row = db
-      .prepare(
-        `SELECT COALESCE(SUM(CASE WHEN nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF' THEN 1 ELSE 0 END), 0) as tif_files
-         FROM relatorio_ficheiros
-         WHERE disco_id = ?`
-      )
-      .get(discoId) as { tif_files: number } | undefined;
-    const count = row?.tif_files || 0;
+      .prepare(`SELECT COUNT(*) as total_docs FROM relatorio_ficheiros WHERE disco_id = ?`)
+      .get(discoId) as { total_docs: number } | undefined;
+    const count = row?.total_docs || 0;
     const val = { total_files: count, tif_files: count };
     discoIndexedCountCache.set(discoId, val);
     return val;
@@ -85,9 +80,7 @@ function getTotalIndexedCount(): number {
   if (cachedTotalFicheirosCount !== null) return cachedTotalFicheirosCount;
   try {
     const exactRow = db
-      .prepare(
-        "SELECT COUNT(*) as c FROM relatorio_ficheiros WHERE nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF'"
-      )
+      .prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros')
       .get() as { c: number } | undefined;
     cachedTotalFicheirosCount = exactRow?.c || 0;
     return cachedTotalFicheirosCount;
@@ -250,9 +243,141 @@ function sanitizeFilename(input: string): string {
 }
 
 /**
+ * Extracts the Document Reference Code (1st element before '_' and 'm0001.tif')
+ * Example: "PT-TT-JC-A-005-0023_m0001.tif" -> "PT-TT-JC-A-005-0023"
+ * Example: "PT-TT-JS-A-B-E-1_m0012.TIF" -> "PT-TT-JS-A-B-E-1"
+ */
+export function extrairCodigoReferencia(rawName: string): string {
+  const baseName = rawName.split(/[/\\]/).pop() || rawName;
+  const semExt = baseName.replace(/\.(?:tiff?)$/i, '').trim();
+  // Match 1st element before '_m0001' (or '_0001')
+  const matchMatriz = semExt.match(/^(.+?)_[mM]?\d+.*$/);
+  if (matchMatriz) {
+    return matchMatriz[1].trim().toUpperCase();
+  }
+  const idxUnderscore = semExt.indexOf('_');
+  if (idxUnderscore > 0) {
+    return semExt.slice(0, idxUnderscore).trim().toUpperCase();
+  }
+  return semExt.toUpperCase();
+}
+
+/**
+ * Compacts existing relatorio_ficheiros rows (e.g. 15M individual *_m0001.tif files from an old DB)
+ * into unique Document Reference Codes per disk, and runs VACUUM to shrink the SQLite file.
+ */
+export function compactarRelatorioFicheirosParaCodigosReferencia(runVacuum = true): {
+  registosAntes: number;
+  registosDepois: number;
+  tamanhoAntesBytes: number;
+  tamanhoDepoisBytes: number;
+} {
+  const tamanhoAntesBytes = fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0;
+  const rowAntes = db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number } | undefined;
+  const registosAntes = rowAntes?.c || 0;
+
+  if (registosAntes === 0) {
+    return {
+      registosAntes: 0,
+      registosDepois: 0,
+      tamanhoAntesBytes,
+      tamanhoDepoisBytes: tamanhoAntesBytes,
+    };
+  }
+
+  db.exec('BEGIN IMMEDIATE TRANSACTION');
+  try {
+    // Preserve total_imagens on discos_usb if any disk currently has total_imagens = 0 and has .TIF files in relatorio_ficheiros
+    db.exec(`
+      UPDATE discos_usb
+      SET total_imagens = (
+        SELECT COUNT(*)
+        FROM relatorio_ficheiros rf
+        WHERE rf.disco_id = discos_usb.id
+          AND (rf.nome_ficheiro LIKE '%.TIF' OR rf.nome_ficheiro LIKE '%.TIFF')
+      )
+      WHERE (total_imagens IS NULL OR total_imagens = 0)
+        AND EXISTS (
+          SELECT 1 FROM relatorio_ficheiros rf
+          WHERE rf.disco_id = discos_usb.id
+            AND (rf.nome_ficheiro LIKE '%.TIF' OR rf.nome_ficheiro LIKE '%.TIFF')
+        );
+    `);
+
+    db.exec('DROP TABLE IF EXISTS relatorio_ficheiros_compact;');
+    db.exec(`
+      CREATE TABLE relatorio_ficheiros_compact (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        disco_id INTEGER NOT NULL,
+        nome_ficheiro TEXT NOT NULL,
+        tamanho_bytes INTEGER DEFAULT 0,
+        pasta TEXT DEFAULT ''
+      );
+    `);
+
+    db.exec(`
+      INSERT INTO relatorio_ficheiros_compact (disco_id, nome_ficheiro, tamanho_bytes, pasta)
+      SELECT
+        disco_id,
+        CASE
+          WHEN INSTR(nome_ficheiro, '_') > 1
+            THEN UPPER(TRIM(SUBSTR(nome_ficheiro, 1, INSTR(nome_ficheiro, '_') - 1)))
+          ELSE TRIM(REPLACE(REPLACE(UPPER(nome_ficheiro), '.TIFF', ''), '.TIF', ''))
+        END AS codigo_ref,
+        COALESCE(SUM(tamanho_bytes), 0) AS tamanho_bytes,
+        COALESCE(MAX(pasta), '') AS pasta
+      FROM relatorio_ficheiros
+      WHERE nome_ficheiro IS NOT NULL AND TRIM(nome_ficheiro) != ''
+      GROUP BY
+        disco_id,
+        CASE
+          WHEN INSTR(nome_ficheiro, '_') > 1
+            THEN UPPER(TRIM(SUBSTR(nome_ficheiro, 1, INSTR(nome_ficheiro, '_') - 1)))
+          ELSE TRIM(REPLACE(REPLACE(UPPER(nome_ficheiro), '.TIFF', ''), '.TIF', ''))
+        END;
+    `);
+
+    db.exec('DROP TABLE relatorio_ficheiros;');
+    db.exec('ALTER TABLE relatorio_ficheiros_compact RENAME TO relatorio_ficheiros;');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_ficheiros_disco_id ON relatorio_ficheiros(disco_id);');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_ficheiros_nome ON relatorio_ficheiros(nome_ficheiro);');
+    db.exec('COMMIT');
+  } catch (err) {
+    try {
+      db.exec('ROLLBACK');
+    } catch {
+      // ignore
+    }
+    throw err;
+  }
+
+  invalidateIndexCountsCache();
+
+  if (runVacuum) {
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      db.exec('VACUUM;');
+    } catch (vacErr) {
+      console.warn('Aviso ao executar VACUUM após compactação:', vacErr);
+    }
+  }
+
+  const rowDepois = db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number } | undefined;
+  const registosDepois = rowDepois?.c || 0;
+  const tamanhoDepoisBytes = fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0;
+
+  return {
+    registosAntes,
+    registosDepois,
+    tamanhoAntesBytes,
+    tamanhoDepoisBytes,
+  };
+}
+
+/**
  * Linear-time O(N) Snap2HTML parser and indexer.
- * Extracts file names from a Snap2HTML report (.html/.htm) and indexes them into relatorio_ficheiros
- * for ultra-fast .tif and archive reference search.
+ * Extracts unique Document Reference Codes (1st element before '_m0001.tif') from a Snap2HTML report (.html/.htm)
+ * and indexes ONLY the distinct Document Reference Codes into relatorio_ficheiros while counting total .TIF images.
  */
 export function indexarRelatorio(discoId: number, caminhoCompleto: string): { total: number; tifCount: number } {
   if (!fs.existsSync(caminhoCompleto)) {
@@ -270,16 +395,11 @@ export function indexarRelatorio(discoId: number, caminhoCompleto: string): { to
     }
   }
 
-  interface ExtractedFile {
-    nome: string;
-    tamanho: number;
-    pasta: string;
-  }
-
-  const ficheirosExtraidos: ExtractedFile[] = [];
+  // Map of codigoReferencia -> { tamanho: total bytes of all matrices in this document, pasta: folder path }
+  const documentosExtraidos = new Map<string, { tamanho: number; pasta: string }>();
+  let tifCount = 0;
 
   // Primary linear-time Snap2HTML regex matching both folder headers ("path*0*ts") and files ("name.ext*size*ts")
-  // Exactly matches the original Python pattern: r'"([^"*]+\.[A-Za-z0-9]{2,5})\*\d+\*\d+"' while also capturing folder context
   const tokenRegex = /"([^"*\r\n]+)\*(\d+)\*\d+"/g;
   let currentFolder = '';
   let match: RegExpExecArray | null;
@@ -294,49 +414,57 @@ export function indexarRelatorio(discoId: number, caminhoCompleto: string): { to
       continue;
     }
 
-    // Index strictly .TIF and .TIFF files
+    // Process strictly .TIF and .TIFF files: count total images and deduplicate by Document Reference Code
     if (/\.(?:tif|tiff)$/i.test(rawName)) {
-      ficheirosExtraidos.push({
-        nome: rawName.toUpperCase(),
-        tamanho: rawSize,
-        pasta: currentFolder,
-      });
-    }
-  }
-
-  // Fallback for plain HTML reports that don't use Snap2HTML's *size*timestamp format
-  if (ficheirosExtraidos.length === 0) {
-    const simpleTifRegex = /[A-Za-z0-9_\-.]+\.(?:tif|tiff)/gi;
-    const seen = new Set<string>();
-    let m: RegExpExecArray | null;
-    while ((m = simpleTifRegex.exec(conteudo)) !== null) {
-      const upper = m[0].toUpperCase();
-      if (!seen.has(upper)) {
-        seen.add(upper);
-        ficheirosExtraidos.push({
-          nome: upper,
-          tamanho: 0,
-          pasta: '',
+      tifCount++;
+      const codigoRef = extrairCodigoReferencia(rawName);
+      if (!codigoRef) continue;
+      const existing = documentosExtraidos.get(codigoRef);
+      if (existing) {
+        existing.tamanho += rawSize;
+        if (!existing.pasta && currentFolder) {
+          existing.pasta = currentFolder;
+        }
+      } else {
+        documentosExtraidos.set(codigoRef, {
+          tamanho: rawSize,
+          pasta: currentFolder,
         });
       }
     }
   }
 
-  let tifCount = 0;
+  // Fallback for plain HTML reports that don't use Snap2HTML's *size*timestamp format
+  if (tifCount === 0) {
+    const simpleTifRegex = /[A-Za-z0-9_\-.]+\.(?:tif|tiff)/gi;
+    const seenTifs = new Set<string>();
+    let m: RegExpExecArray | null;
+    while ((m = simpleTifRegex.exec(conteudo)) !== null) {
+      const upperTif = m[0].toUpperCase();
+      if (!seenTifs.has(upperTif)) {
+        seenTifs.add(upperTif);
+        tifCount++;
+        const codigoRef = extrairCodigoReferencia(upperTif);
+        if (codigoRef && !documentosExtraidos.has(codigoRef)) {
+          documentosExtraidos.set(codigoRef, {
+            tamanho: 0,
+            pasta: '',
+          });
+        }
+      }
+    }
+  }
+
   db.exec('BEGIN IMMEDIATE TRANSACTION');
   try {
     db.prepare('DELETE FROM relatorio_ficheiros WHERE disco_id = ?').run(discoId);
 
-    if (ficheirosExtraidos.length > 0) {
+    if (documentosExtraidos.size > 0) {
       const insStmt = db.prepare(
         'INSERT INTO relatorio_ficheiros (disco_id, nome_ficheiro, tamanho_bytes, pasta) VALUES (?, ?, ?, ?)'
       );
-      for (let i = 0; i < ficheirosExtraidos.length; i++) {
-        const item = ficheirosExtraidos[i];
-        insStmt.run(discoId, item.nome, item.tamanho, item.pasta);
-        if (item.nome.endsWith('.TIF') || item.nome.endsWith('.TIFF')) {
-          tifCount++;
-        }
+      for (const [codigoRef, info] of documentosExtraidos.entries()) {
+        insStmt.run(discoId, codigoRef, info.tamanho, info.pasta);
       }
     }
     db.exec('COMMIT');
@@ -350,7 +478,7 @@ export function indexarRelatorio(discoId: number, caminhoCompleto: string): { to
     console.error('Erro ao indexar relatório:', err);
   }
 
-  return { total: ficheirosExtraidos.length, tifCount };
+  return { total: documentosExtraidos.size, tifCount };
 }
 
 /**
@@ -644,7 +772,10 @@ app.post('/api/login', (req, res) => {
 });
 
 function buildFileLikePattern(rawQuery: string): { likePattern: string; normalized: string } {
-  const normalized = rawQuery.trim().replace(/\//g, '-').toUpperCase();
+  let normalized = rawQuery.trim().replace(/\//g, '-').toUpperCase();
+  // Strip .tif/.tiff and _m0001 matrix suffix if the user pasted a full image filename
+  normalized = normalized.replace(/\.(?:TIFF?)$/i, '');
+  normalized = normalized.replace(/_[MM]?\d+.*$/i, '');
   if (normalized.includes('*') || normalized.includes('?')) {
     const likePattern = normalized.replace(/\*/g, '%').replace(/\?/g, '_');
     return { likePattern, normalized };
@@ -710,22 +841,31 @@ app.get('/api/discos', (req, res) => {
     const padraoTexto = isWildcard ? busca.replace(/\*/g, '%').replace(/\?/g, '_') : `%${busca}%`;
 
     const { likePattern } = buildFileLikePattern(busca);
-    const matchingFileRows = db
+    const matchingDiscoSummary = db
       .prepare(
-        `SELECT disco_id, nome_ficheiro FROM relatorio_ficheiros WHERE nome_ficheiro LIKE ? AND (nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF') ORDER BY nome_ficheiro LIMIT 500`
+        `SELECT disco_id, COUNT(*) as total_matches
+         FROM relatorio_ficheiros
+         WHERE nome_ficheiro LIKE ? OR pasta LIKE ?
+         GROUP BY disco_id`
       )
-      .all(likePattern) as { disco_id: number; nome_ficheiro: string }[];
+      .all(likePattern, likePattern) as { disco_id: number; total_matches: number }[];
+
+    const sampleFilesStmt = db.prepare(
+      `SELECT nome_ficheiro
+       FROM relatorio_ficheiros
+       WHERE disco_id = ? AND (nome_ficheiro LIKE ? OR pasta LIKE ?)
+       ORDER BY nome_ficheiro
+       LIMIT 10`
+    );
 
     const matchedDiscoIds = new Set<number>();
-    for (const row of matchingFileRows) {
+    for (const row of matchingDiscoSummary) {
       matchedDiscoIds.add(row.disco_id);
-      if (!matchedFilesByDisco[row.disco_id]) {
-        matchedFilesByDisco[row.disco_id] = { files: [], total: 0 };
-      }
-      matchedFilesByDisco[row.disco_id].total++;
-      if (matchedFilesByDisco[row.disco_id].files.length < 10) {
-        matchedFilesByDisco[row.disco_id].files.push(row.nome_ficheiro);
-      }
+      const sampleRows = sampleFilesStmt.all(row.disco_id, likePattern, likePattern) as { nome_ficheiro: string }[];
+      matchedFilesByDisco[row.disco_id] = {
+        files: sampleRows.map((r) => r.nome_ficheiro),
+        total: row.total_matches,
+      };
     }
 
     const textClause = `
@@ -848,10 +988,6 @@ app.get('/api/pesquisa-tif', (req, res) => {
     params.push(likePattern, likePattern);
   }
 
-  if (apenasTif) {
-    where.push("(rf.nome_ficheiro LIKE '%.TIF' OR rf.nome_ficheiro LIKE '%.TIFF')");
-  }
-
   if (arquivo) {
     where.push('d.arquivo = ?');
     params.push(arquivo);
@@ -928,9 +1064,6 @@ app.get('/api/discos/:id/ficheiros', (req, res) => {
     const { likePattern } = buildFileLikePattern(q);
     clauses.push('(nome_ficheiro LIKE ? OR pasta LIKE ?)');
     params.push(likePattern, likePattern);
-  }
-  if (apenasTif) {
-    clauses.push("(nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF')");
   }
 
   const ficheiros = db
@@ -1020,7 +1153,7 @@ function handleCreateDiscoRecord(req: express.Request, res: express.Response) {
 
     res.json({
       message: relatorio_path
-        ? `Disco registado e relatório Snap2HTML indexado automaticamente (${indexResult.total} ficheiros, ${indexResult.tifCount} matrizes .TIF)!`
+        ? `Disco registado e relatório Snap2HTML indexado automaticamente (${indexResult.total} documentos/códigos de referência únicos, ${indexResult.tifCount} imagens .TIF)!`
         : 'Disco registado com sucesso!',
       id: newId,
       indexed: indexResult,
@@ -1258,14 +1391,14 @@ app.get('/api/relatorios', (_req, res) => {
   });
 });
 
-// Batch re-index all reports in ./relatorios
+// Batch re-index all reports in ./relatorios into unique Document Reference Codes + compact any remaining entries
 app.post('/api/reindexar', (_req, res) => {
   const discos = db
-    .prepare("SELECT id, id_disco, ticket_num, relatorio_path FROM discos_usb WHERE relatorio_path IS NOT NULL AND relatorio_path != ''")
-    .all() as { id: number; id_disco: string; ticket_num: string; relatorio_path: string }[];
+    .prepare("SELECT id, id_disco, ticket_num, relatorio_path, total_imagens FROM discos_usb WHERE relatorio_path IS NOT NULL AND relatorio_path != ''")
+    .all() as { id: number; id_disco: string; ticket_num: string; relatorio_path: string; total_imagens: number }[];
 
   let relatoriosIndexados = 0;
-  let totalFicheiros = 0;
+  let totalDocumentos = 0;
   let totalTif = 0;
   let falhados = 0;
 
@@ -1276,19 +1409,42 @@ app.post('/api/reindexar', (_req, res) => {
       continue;
     }
     const resIdx = indexarRelatorio(d.id, caminho);
+    if ((!d.total_imagens || d.total_imagens === 0) && resIdx.tifCount > 0) {
+      db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(resIdx.tifCount, d.id);
+    }
     relatoriosIndexados++;
-    totalFicheiros += resIdx.total;
+    totalDocumentos += resIdx.total;
     totalTif += resIdx.tifCount;
   }
 
+  // Also compact any existing relatorio_ficheiros rows (e.g. from disks whose HTML file is not in ./relatorios) into Document Reference Codes
+  const compactStats = compactarRelatorioFicheirosParaCodigosReferencia(true);
+  const mbDepois = (compactStats.tamanhoDepoisBytes / (1024 * 1024)).toFixed(2);
+
   res.json({
-    message: `Reindexação concluída: ${relatoriosIndexados}/${discos.length} relatórios processados (${totalFicheiros} ficheiros, ${totalTif} matrizes .TIF).`,
+    message: `Reindexação e otimização concluídas: ${relatoriosIndexados}/${discos.length} relatórios processados (${compactStats.registosDepois.toLocaleString('pt-PT')} documentos/códigos de referência únicos indexados; tamanho da BD: ${mbDepois} MB).`,
     relatorios_indexados: relatoriosIndexados,
     total_discos_com_relatorio: discos.length,
-    total_ficheiros: totalFicheiros,
+    total_ficheiros: compactStats.registosDepois,
     total_tif: totalTif,
     falhados,
   });
+});
+
+// Dedicated endpoint to compact existing relatorio_ficheiros (15M+ .TIF rows) into unique Document Reference Codes
+app.post('/api/admin/db/compactar-referencias', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const stats = compactarRelatorioFicheirosParaCodigosReferencia(true);
+    const mbAntes = (stats.tamanhoAntesBytes / (1024 * 1024)).toFixed(2);
+    const mbDepois = (stats.tamanhoDepoisBytes / (1024 * 1024)).toFixed(2);
+    res.json({
+      message: `Otimização concluída! Tabela indexada reduzida de ${stats.registosAntes.toLocaleString('pt-PT')} ficheiros .TIF para ${stats.registosDepois.toLocaleString('pt-PT')} códigos de referência únicos (Base de dados reduzida de ${mbAntes} MB para ${mbDepois} MB).`,
+      ...stats,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao compactar códigos de referência: ${e?.message || e}` });
+  }
 });
 
 // CSV Export
@@ -1333,14 +1489,34 @@ app.get('/api/exportar-csv', (req, res) => {
   if (busca) {
     const isWildcard = busca.includes('*') || busca.includes('?');
     const padrao = isWildcard ? busca.replace(/\*/g, '%').replace(/\?/g, '_') : `%${busca}%`;
+    const { likePattern } = buildFileLikePattern(busca);
+    const matchingDiscoRows = db
+      .prepare(
+        `SELECT DISTINCT disco_id FROM relatorio_ficheiros WHERE nome_ficheiro LIKE ? OR pasta LIKE ?`
+      )
+      .all(likePattern, likePattern) as { disco_id: number }[];
+
     const textClause = `
       (id_disco LIKE ? OR projeto LIKE ? OR arquivo LIKE ? OR remetente LIKE ? 
        OR ticket_num LIKE ? OR numero_serie LIKE ? OR localizacao LIKE ? 
        OR ticket_integracao LIKE ? OR observacoes LIKE ?)
     `;
     const textParams = Array(9).fill(padrao);
-    const fullWhere = [...whereClauses, textClause].join(' AND ');
-    discos = db.prepare(`SELECT * FROM discos_usb WHERE ${fullWhere} ORDER BY ${SQL_DATA_ORDER}`).all(...params, ...textParams);
+
+    if (matchingDiscoRows.length > 0) {
+      const idList = matchingDiscoRows.map((r) => r.disco_id);
+      const placeholders = idList.map(() => '?').join(',');
+      const combinedClause = `(${textClause} OR id IN (${placeholders}))`;
+      const fullWhere = [...whereClauses, combinedClause].join(' AND ');
+      discos = db
+        .prepare(`SELECT * FROM discos_usb WHERE ${fullWhere} ORDER BY ${SQL_DATA_ORDER}`)
+        .all(...params, ...textParams, ...idList);
+    } else {
+      const fullWhere = [...whereClauses, textClause].join(' AND ');
+      discos = db
+        .prepare(`SELECT * FROM discos_usb WHERE ${fullWhere} ORDER BY ${SQL_DATA_ORDER}`)
+        .all(...params, ...textParams);
+    }
   } else if (whereClauses.length > 0) {
     discos = db.prepare(`SELECT * FROM discos_usb WHERE ${whereClauses.join(' AND ')} ORDER BY ${SQL_DATA_ORDER}`).all(...params);
   } else {
@@ -2809,7 +2985,7 @@ app.post('/api/admin/db/auto-link-reports', (req, res) => {
     const forceAll = Boolean(req.body?.force_reindex_all);
     const stats = autoLinkAndIndexReports(forceAll);
     res.json({
-      message: `Sincronização e indexação concluídas: ${stats.newlyLinked} relatórios associados automaticamente, ${stats.indexedDisks} relatórios indexados (${stats.totalTifIndexed} matrizes .TIF / ${stats.totalFilesIndexed} ficheiros)!`,
+      message: `Sincronização e indexação concluídas: ${stats.newlyLinked} relatórios associados automaticamente, ${stats.indexedDisks} relatórios indexados (${stats.totalFilesIndexed} códigos de referência únicos / ${stats.totalTifIndexed} imagens .TIF)!`,
       ...stats,
     });
   } catch (e: any) {
@@ -2850,26 +3026,32 @@ app.post('/api/admin/db/link-report', (req, res) => {
       db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(resIdx.tifCount, disco.id);
     }
     res.json({
-      message: `Relatório "${filename}" associado ao disco "${disco.id_disco}" e indexado com sucesso (${resIdx.tifCount} ficheiros .TIF)!`,
+      message: `Relatório "${filename}" associado ao disco "${disco.id_disco}" e indexado com sucesso (${resIdx.total} códigos de referência únicos, ${resIdx.tifCount} imagens .TIF)!`,
     });
   } catch (e: any) {
     res.status(500).json({ error: `Erro ao associar relatório: ${e?.message || e}` });
   }
 });
 
-// 9. Database Maintenance: Optimize (VACUUM + WAL Checkpoint + Integrity Check)
+// 9. Database Maintenance: Optimize (Compact to Document Reference Codes + VACUUM + WAL Checkpoint + Integrity Check)
 app.post('/api/admin/db/optimize', (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
-    db.exec('VACUUM;');
+    const compactStats = compactarRelatorioFicheirosParaCodigosReferencia(true);
     db.exec('ANALYZE;');
     const checkRow = db.prepare('PRAGMA integrity_check').get() as { integrity_check?: string } | undefined;
+    const mbAntes = (compactStats.tamanhoAntesBytes / (1024 * 1024)).toFixed(2);
+    const mbDepois = (compactStats.tamanhoDepoisBytes / (1024 * 1024)).toFixed(2);
     res.json({
-      message: `Base de dados otimizada e compactada (VACUUM + WAL Checkpoint concluídos · Integridade: ${
+      message: `Base de dados otimizada e compactada para Códigos de Referência (${compactStats.registosAntes.toLocaleString(
+        'pt-PT'
+      )} → ${compactStats.registosDepois.toLocaleString(
+        'pt-PT'
+      )} códigos de referência únicos · Tamanho: ${mbAntes} MB → ${mbDepois} MB · Integridade: ${
         checkRow?.integrity_check || 'ok'
       })!`,
+      ...compactStats,
     });
   } catch (e: any) {
     res.status(500).json({ error: `Erro ao otimizar base de dados: ${e?.message || e}` });
@@ -3063,6 +3245,27 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`RIDIS Server running on http://localhost:${PORT}`);
+    // Automatically compact legacy .TIF rows into unique Document Reference Codes if any uncompacted .TIF rows exist
+    setImmediate(() => {
+      try {
+        const hasUncompactedTif = db
+          .prepare(
+            "SELECT 1 FROM relatorio_ficheiros WHERE nome_ficheiro LIKE '%.TIF' OR nome_ficheiro LIKE '%.TIFF' LIMIT 1"
+          )
+          .get();
+        if (hasUncompactedTif) {
+          console.log(
+            '[RIDIS] A compactar relatorio_ficheiros para Códigos de Referência únicos (remoção de sufixos _m0001.tif)...'
+          );
+          const stats = compactarRelatorioFicheirosParaCodigosReferencia(true);
+          console.log(
+            `[RIDIS] Compactação concluída: ${stats.registosAntes} ficheiros -> ${stats.registosDepois} códigos de referência únicos.`
+          );
+        }
+      } catch (err) {
+        console.warn('[RIDIS] Aviso na verificação de compactação automática:', err);
+      }
+    });
   });
 
   if (process.env.APPLET_ID) {
