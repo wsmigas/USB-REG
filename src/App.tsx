@@ -718,7 +718,7 @@ export default function App() {
     setRestoreProgressText('A preparar ficheiro...');
 
     try {
-      const chunkSize = 2 * 1024 * 1024; // 2 MB per chunk to bypass proxy payload limits
+      const chunkSize = 8 * 1024 * 1024; // 8 MB per chunk (~10.6MB Base64, 4x faster while safely under 32MB proxy limit)
       const totalChunks = Math.max(1, Math.ceil(restoreUploadFile.size / chunkSize));
       const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -737,26 +737,38 @@ export default function App() {
         const buffer = await slice.arrayBuffer();
         const chunkBase64 = arrayBufferToBase64(buffer);
 
-        const res = await fetch(`/api/admin/db/restore-chunk?admin_user_id=${currentUser.id}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-admin-user-id': String(currentUser.id),
-          },
-          body: JSON.stringify({
-            admin_user_id: currentUser.id,
-            uploadId,
-            chunkIndex,
-            totalChunks,
-            originalName: restoreUploadFile.name,
-            mode: restoreUploadMode,
-            chunkBase64,
-          }),
-        });
+        let res: Response | null = null;
+        let data: any = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            res = await fetch(`/api/admin/db/restore-chunk?admin_user_id=${currentUser.id}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-admin-user-id': String(currentUser.id),
+              },
+              body: JSON.stringify({
+                admin_user_id: currentUser.id,
+                uploadId,
+                chunkIndex,
+                totalChunks,
+                originalName: restoreUploadFile.name,
+                mode: restoreUploadMode,
+                chunkBase64,
+              }),
+            });
+            data = await safeParseJson(res);
+            if (res.ok) break;
+          } catch {
+            // Network glitch, wait 1s and retry
+          }
+          if (attempt < 3) {
+            await new Promise((r) => setTimeout(r, 1000));
+          }
+        }
 
-        const data = await safeParseJson(res);
-        if (!res.ok) {
-          showFlash(data.error || 'Erro ao restaurar/migrar ficheiro de base de dados.', 'danger');
+        if (!res || !res.ok) {
+          showFlash(data?.error || 'Erro ao restaurar/migrar ficheiro de base de dados.', 'danger');
           return;
         }
         if (data.done) {
@@ -797,7 +809,7 @@ export default function App() {
     let errorsCount = 0;
 
     try {
-      const chunkSize = 2 * 1024 * 1024; // 2 MB per chunk
+      const chunkSize = 8 * 1024 * 1024; // 8 MB per chunk
 
       for (let i = 0; i < htmlFiles.length; i++) {
         const file = htmlFiles[i];
@@ -819,24 +831,36 @@ export default function App() {
           const buffer = await file.slice(start, end).arrayBuffer();
           const chunkBase64 = arrayBufferToBase64(buffer);
 
-          const res = await fetch(`/api/admin/db/migrate-report-chunk?admin_user_id=${currentUser.id}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-admin-user-id': String(currentUser.id),
-            },
-            body: JSON.stringify({
-              admin_user_id: currentUser.id,
-              uploadId,
-              chunkIndex,
-              totalChunks,
-              originalName: file.name,
-              chunkBase64,
-            }),
-          });
+          let res: Response | null = null;
+          let data: any = null;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+              res = await fetch(`/api/admin/db/migrate-report-chunk?admin_user_id=${currentUser.id}`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-admin-user-id': String(currentUser.id),
+                },
+                body: JSON.stringify({
+                  admin_user_id: currentUser.id,
+                  uploadId,
+                  chunkIndex,
+                  totalChunks,
+                  originalName: file.name,
+                  chunkBase64,
+                }),
+              });
+              data = await safeParseJson(res);
+              if (res.ok) break;
+            } catch {
+              // retry on network hiccup
+            }
+            if (attempt < 3) {
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+          }
 
-          const data = await safeParseJson(res);
-          if (!res.ok) {
+          if (!res || !res.ok) {
             errorsCount++;
             break;
           }
