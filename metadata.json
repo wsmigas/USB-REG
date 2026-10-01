@@ -1,0 +1,6 @@
+{
+  "name": "RIDIS — Gestão de Discos USB e Matrizes (DGLAB)",
+  "description": "Portal e base de dados local para registo, inventário de discos USB, matrizes de digitalização e indexação automática de relatórios Snap2HTML para pesquisa rápida de ficheiros TIF.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
