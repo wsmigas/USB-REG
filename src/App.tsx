@@ -1264,111 +1264,171 @@ export default function App() {
         theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
       }`}
     >
-      {/* Top Bar Contract: 3 Clean Zones (Brand Wordmark | Navigation Links | Primary Actions) */}
+      {/* Top Banner / Header */}
       <header
-        className={`sticky top-0 z-30 border-b px-6 py-3.5 flex items-center justify-between gap-4 ${
+        className={`sticky top-0 z-30 border-b backdrop-blur-md ${
           theme === 'dark'
-            ? 'bg-slate-950/95 border-slate-800 backdrop-blur-md'
-            : 'bg-white/95 border-slate-200 backdrop-blur-md'
+            ? 'bg-slate-900/80 border-slate-800'
+            : 'bg-white/95 border-slate-200'
         }`}
       >
-        {/* Zone 1: Brand Title (Single text element wordmark) */}
-        <a
-          href="#inventario"
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTab('inventario');
-          }}
-          className="text-lg font-bold tracking-tight whitespace-nowrap shrink-0"
-        >
-          RIDIS
-        </a>
-
-        {/* Zone 2: Navigation Links */}
-        <nav className="flex items-center gap-6 text-sm font-medium overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab('inventario')}
-            className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
-              activeTab === 'inventario'
-                ? 'border-blue-500 text-blue-500 font-semibold'
-                : theme === 'dark'
-                ? 'border-transparent text-slate-400 hover:text-slate-100'
-                : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+        <div className="max-w-[1440px] w-full mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-4">
+          {/* Zone 1: Brand Banner (Login Logo + RIDIS + DGLAB Badge + Subtitle) */}
+          <a
+            href="#inventario"
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveTab('inventario');
+            }}
+            className="flex items-center gap-4 shrink-0"
           >
-            Inventário de Discos
-          </button>
-          {currentUser.is_admin && (
-            <>
-              <button
-                type="button"
-                onClick={() => setActiveTab('usuarios')}
-                className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
-                  activeTab === 'usuarios'
-                    ? 'border-blue-500 text-blue-500 font-semibold'
-                    : theme === 'dark'
-                    ? 'border-transparent text-slate-400 hover:text-slate-100'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Utilizadores
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab('admin_bd')}
-                className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  activeTab === 'admin_bd'
-                    ? 'border-blue-500 text-blue-500 font-semibold'
-                    : theme === 'dark'
-                    ? 'border-transparent text-slate-400 hover:text-slate-100'
-                    : 'border-transparent text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Database className="w-3.5 h-3.5" />
-                Administração BD
-              </button>
-            </>
-          )}
-        </nav>
+            <div className="w-14 h-14 rounded-xl bg-blue-600 flex items-center justify-center shadow-lg shadow-blue-600/30 shrink-0">
+              <HardDrive className="w-7 h-7 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <span
+                  className={`text-3xl font-extrabold tracking-tight leading-none ${
+                    theme === 'dark' ? 'text-slate-200' : 'text-slate-900'
+                  }`}
+                >
+                  RIDIS
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-[#0b1d3a] border border-blue-800/80 text-blue-200 text-xs font-bold tracking-wider uppercase">
+                  DGLAB
+                </span>
+              </div>
+              <p className={`text-sm mt-1.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                Gestão de Discos USB e Matrizes de Digitalização
+              </p>
+            </div>
+          </a>
 
-        {/* Zone 3: Primary Actions */}
-        <div className="flex items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={openNewDiscoModal}
-            className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Novo Registo
-          </button>
+          {/* Zone 2: Navigation Links */}
+          <nav className="flex items-center gap-6 text-sm font-medium overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('inventario')}
+              className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
+                activeTab === 'inventario'
+                  ? 'border-blue-500 text-blue-500 font-semibold'
+                  : theme === 'dark'
+                  ? 'border-transparent text-slate-400 hover:text-slate-100'
+                  : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Inventário de Discos
+            </button>
+            {currentUser.is_admin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('usuarios')}
+                  className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
+                    activeTab === 'usuarios'
+                      ? 'border-blue-500 text-blue-500 font-semibold'
+                      : theme === 'dark'
+                      ? 'border-transparent text-slate-400 hover:text-slate-100'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Utilizadores
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('admin_bd')}
+                  className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                    activeTab === 'admin_bd'
+                      ? 'border-blue-500 text-blue-500 font-semibold'
+                      : theme === 'dark'
+                      ? 'border-transparent text-slate-400 hover:text-slate-100'
+                      : 'border-transparent text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Administração BD
+                </button>
+              </>
+            )}
+          </nav>
 
-          <button
-            type="button"
-            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-            title={theme === 'dark' ? 'Mudar para Modo Claro' : 'Mudar para Modo Escuro'}
-            className={`p-2 rounded-lg border transition-colors cursor-pointer ${
-              theme === 'dark'
-                ? 'border-slate-800 text-slate-300 hover:bg-slate-900'
-                : 'border-slate-200 text-slate-700 hover:bg-slate-100'
-            }`}
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
+          {/* Zone 3: Primary Actions */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            {activeTab === 'inventario' && (
+              <>
+                <a
+                  href="/api/exportar-template"
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Template CSV
+                </a>
+                <a
+                  href={buildExportCsvUrl()}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-emerald-400'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-emerald-700'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  Exportar CSV
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setIsCsvModalOpen(true)}
+                  className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    theme === 'dark'
+                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-amber-400'
+                      : 'border-slate-200 bg-white hover:bg-slate-100 text-amber-700'
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  Importar CSV
+                </button>
+              </>
+            )}
 
-          <button
-            type="button"
-            onClick={handleLogout}
-            title={`Terminar sessão (${currentUser.username})`}
-            className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
-              theme === 'dark'
-                ? 'border-slate-800 text-slate-300 hover:bg-red-950/50 hover:border-red-800 hover:text-red-300'
-                : 'border-slate-200 text-slate-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700'
-            }`}
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Sair
-          </button>
+            <button
+              type="button"
+              onClick={openNewDiscoModal}
+              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Novo Registo
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              title={theme === 'dark' ? 'Mudar para Modo Claro' : 'Mudar para Modo Escuro'}
+              className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+                theme === 'dark'
+                  ? 'border-slate-800 text-slate-300 hover:bg-slate-900'
+                  : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              title={`Terminar sessão (${currentUser.username})`}
+              className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer ${
+                theme === 'dark'
+                  ? 'border-slate-800 text-slate-300 hover:bg-red-950/50 hover:border-red-800 hover:text-red-300'
+                  : 'border-slate-200 text-slate-700 hover:bg-red-50 hover:border-red-200 hover:text-red-700'
+              }`}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sair
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1405,58 +1465,6 @@ export default function App() {
         {/* TAB 1: INVENTÁRIO DE DISCOS USB E MATRIZES */}
         {activeTab === 'inventario' && (
           <div className="space-y-6">
-            {/* Institutional Header & Utility Actions */}
-            <div className="flex flex-wrap items-end justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold tracking-tight">
-                  Gestão de Discos USB e Matrizes de Digitalização
-                </h1>
-                <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Direção-Geral do Livro, dos Arquivos e das Bibliotecas (DGLAB) · Base de dados SQLite local (
-                  <span className="font-mono">gestao_discos.db</span>) · Pasta de relatórios (
-                  <span className="font-mono">relatorios/</span>) · Sessão:{' '}
-                  <strong className="font-semibold">{currentUser.username}</strong> (
-                  {currentUser.is_admin ? 'Administrador' : 'Operador'})
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <a
-                  href="/api/exportar-template"
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-slate-300'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Template CSV
-                </a>
-                <a
-                  href={buildExportCsvUrl()}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-emerald-400'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-emerald-700'
-                  }`}
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  Exportar CSV
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setIsCsvModalOpen(true)}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    theme === 'dark'
-                      ? 'border-slate-800 bg-slate-900 hover:bg-slate-800 text-amber-400'
-                      : 'border-slate-200 bg-white hover:bg-slate-100 text-amber-700'
-                  }`}
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  Importar CSV
-                </button>
-              </div>
-            </div>
 
             {/* Statistics Grid (Single-Elevation, Tabular Numerals) */}
             <div
