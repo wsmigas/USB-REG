@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import zlib from 'zlib';
 import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -755,7 +756,7 @@ const SQL_DATA_ORDER = `
  */
 app.post('/api/relatorios/upload-chunk', (req, res) => {
   try {
-    const { uploadId, chunkIndex, totalChunks, originalName, id_disco, ticket_num, chunkBase64 } = req.body;
+    const { uploadId, chunkIndex, totalChunks, originalName, id_disco, ticket_num, chunkBase64, compressed } = req.body;
     if (!uploadId || typeof chunkIndex !== 'number' || typeof totalChunks !== 'number' || !chunkBase64) {
       res.status(400).json({ error: 'Parâmetros de upload incompletos.' });
       return;
@@ -770,7 +771,8 @@ app.post('/api/relatorios/upload-chunk', (req, res) => {
     const safeUploadId = sanitizeFilename(String(uploadId));
     const tempPath = path.join(RELATORIOS_DIR, `.tmp_${safeUploadId}`);
 
-    const buffer = Buffer.from(chunkBase64, 'base64');
+    const rawBytes = Buffer.from(chunkBase64, 'base64');
+    const buffer = compressed ? zlib.gunzipSync(rawBytes) : rawBytes;
     if (chunkIndex === 0 && fs.existsSync(tempPath)) {
       fs.unlinkSync(tempPath);
     }
@@ -1844,14 +1846,24 @@ app.delete('/api/usuarios/:id', (req, res) => {
 function requireAdmin(req: express.Request, res: express.Response): boolean {
   const rawAdminId =
     req.headers['x-admin-user-id'] || req.query.admin_user_id || req.body?.admin_user_id;
+  const rawAdminUsername = String(
+    req.headers['x-admin-username'] || req.query.admin_username || req.body?.admin_username || ''
+  ).trim();
   const adminId = Number(rawAdminId || 0);
-  if (!adminId) {
+  if (!adminId && !rawAdminUsername) {
     res.status(403).json({ error: 'Acesso restrito: este módulo apenas pode ser acedido por Administradores.' });
     return false;
   }
-  const user = db.prepare('SELECT id, username, is_admin FROM usuarios WHERE id = ?').get(adminId) as
-    | { id: number; username: string; is_admin: number }
-    | undefined;
+
+  let user: { id: number; username: string; is_admin: number } | undefined;
+  if (adminId) {
+    user = db.prepare('SELECT id, username, is_admin FROM usuarios WHERE id = ?').get(adminId) as any;
+  }
+  if ((!user || !user.is_admin) && rawAdminUsername) {
+    user = db
+      .prepare('SELECT id, username, is_admin FROM usuarios WHERE LOWER(username) = LOWER(?)')
+      .get(rawAdminUsername) as any;
+  }
   if (!user || !user.is_admin) {
     res.status(403).json({ error: 'Permissão recusada: apenas utilizadores Administradores podem gerir a base de dados.' });
     return false;
@@ -2741,11 +2753,22 @@ app.post('/api/admin/db/restore-upload', uploadMemory.single('file'), (req, res)
 });
 
 // 8b. Chunked Upload & Restore / Merge for large SQLite (.db/.sqlite) or Full JSON (.json) files
+// Supports GZIP-compressed chunks and random-access byte-offset writes for parallel chunk uploads!
 app.post('/api/admin/db/restore-chunk', (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const { uploadId, chunkIndex, totalChunks, originalName, mode, chunkBase64 } = req.body;
+    const {
+      uploadId,
+      chunkIndex,
+      totalChunks,
+      originalName,
+      mode,
+      chunkBase64,
+      compressed,
+      offset,
+      deferFinalize,
+    } = req.body;
     if (!uploadId || typeof chunkIndex !== 'number' || typeof totalChunks !== 'number' || !chunkBase64) {
       res.status(400).json({ error: 'Parâmetros de upload incompletos.' });
       return;
@@ -2765,89 +2788,129 @@ app.post('/api/admin/db/restore-chunk', (req, res) => {
     const safeUploadId = sanitizeFilename(String(uploadId));
     const tempRestorePath = path.join(BACKUPS_DIR, `.tmp_restore_${safeUploadId}`);
 
-    const buffer = Buffer.from(chunkBase64, 'base64');
-    if (chunkIndex === 0 && fs.existsSync(tempRestorePath)) {
-      fs.unlinkSync(tempRestorePath);
-    }
-    fs.appendFileSync(tempRestorePath, buffer);
+    const rawBytes = Buffer.from(chunkBase64, 'base64');
+    const buffer = compressed ? zlib.gunzipSync(rawBytes) : rawBytes;
 
-    if (chunkIndex + 1 < totalChunks) {
+    if (typeof offset === 'number' && offset >= 0) {
+      // Exact byte-offset write (supports parallel chunk workers and idempotent retries!)
+      const fd = fs.openSync(tempRestorePath, fs.constants.O_CREAT | fs.constants.O_RDWR, 0o666);
+      try {
+        fs.writeSync(fd, buffer, 0, buffer.length, offset);
+      } finally {
+        fs.closeSync(fd);
+      }
+    } else {
+      if (chunkIndex === 0 && fs.existsSync(tempRestorePath)) {
+        fs.unlinkSync(tempRestorePath);
+      }
+      fs.appendFileSync(tempRestorePath, buffer);
+    }
+
+    if (deferFinalize || chunkIndex + 1 < totalChunks) {
       res.json({ done: false, chunkIndex });
       return;
     }
 
-    // Final chunk received -> execute restore or migration merge
-    try {
-      const restoreMode = mode === 'merge' ? 'merge' : 'replace';
+    // Sequential mode final chunk -> finalize immediately
+    finalizeDatabaseRestore(tempRestorePath, String(originalName || 'gestao_discos.db'), mode, res);
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao carregar bloco da base de dados: ${e?.message || e}` });
+  }
+});
 
-      if (isJson) {
-        const safetyFile = createPreRestoreSafetyBackup();
-        const raw = fs.readFileSync(tempRestorePath, 'utf-8');
-        const payload = JSON.parse(raw);
-        const stats = restoreFromFullJsonPayload(payload);
+function finalizeDatabaseRestore(
+  tempRestorePath: string,
+  originalName: string,
+  mode: any,
+  res: express.Response
+) {
+  const origLower = String(originalName || '').toLowerCase();
+  const isJson = origLower.endsWith('.json');
+  const restoreMode = mode === 'merge' ? 'merge' : 'replace';
+
+  try {
+    if (!fs.existsSync(tempRestorePath)) {
+      res.status(400).json({ error: 'Ficheiro temporário de restauro não encontrado no servidor.' });
+      return;
+    }
+
+    if (isJson) {
+      const safetyFile = createPreRestoreSafetyBackup();
+      const raw = fs.readFileSync(tempRestorePath, 'utf-8');
+      const payload = JSON.parse(raw);
+      const stats = restoreFromFullJsonPayload(payload);
+      if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath);
+      res.json({
+        done: true,
+        message: `Restauro concluído com sucesso a partir de "${originalName}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados, ${stats.relatoriosRestaurados} relatórios HTML)! Salvaguarda prévia criada: ${safetyFile}.`,
+      });
+    } else {
+      const fd = fs.openSync(tempRestorePath, 'r');
+      const headerBuf = Buffer.alloc(16);
+      fs.readSync(fd, headerBuf, 0, 16, 0);
+      fs.closeSync(fd);
+      if (!headerBuf.subarray(0, 15).toString('utf-8').startsWith('SQLite format 3')) {
         if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath);
-        res.json({
-          done: true,
-          message: `Restauro concluído com sucesso a partir de "${originalName}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados, ${stats.relatoriosRestaurados} relatórios HTML)! Salvaguarda prévia criada: ${safetyFile}.`,
-        });
-      } else {
-        const fd = fs.openSync(tempRestorePath, 'r');
-        const headerBuf = Buffer.alloc(16);
-        fs.readSync(fd, headerBuf, 0, 16, 0);
-        fs.closeSync(fd);
-        if (!headerBuf.subarray(0, 15).toString('utf-8').startsWith('SQLite format 3')) {
-          if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath);
-          res.status(400).json({ error: 'O ficheiro selecionado não é uma base de dados SQLite 3 válida.' });
-          return;
-        }
-
-        const safetyFile = createPreRestoreSafetyBackup();
-        const stats = restoreFromSqliteFile(
-          tempRestorePath,
-          restoreMode,
-          restoreMode === 'replace' // moveInsteadOfCopy=true in replace mode -> 1ms atomic rename!
-        );
-        if (fs.existsSync(tempRestorePath)) {
-          try {
-            fs.unlinkSync(tempRestorePath);
-          } catch {
-            // ignore
-          }
-        }
-
-        if (restoreMode === 'merge') {
-          res.json({
-            done: true,
-            message: `Migração concluída a partir de "${originalName}": ${stats.discosNovos} novos discos importados, ${stats.discosAtualizados} atualizados (${stats.discos} discos no total e ${stats.ficheiros.toLocaleString(
-              'pt-PT'
-            )} ficheiros indexados)! Salvaguarda prévia: ${safetyFile}.`,
-          });
-        } else {
-          res.json({
-            done: true,
-            message: `Base de dados SQLite migrada/restaurada com sucesso a partir de "${originalName}" (${stats.discos} discos, ${stats.ficheiros.toLocaleString(
-              'pt-PT'
-            )} ficheiros indexados)! Salvaguarda prévia: ${safetyFile}.`,
-          });
-        }
+        res.status(400).json({ error: 'O ficheiro selecionado não é uma base de dados SQLite 3 válida.' });
+        return;
       }
-    } catch (innerErr: any) {
-      // Keep the uploaded file in backups/ if an unexpected error occurs so a 2GB upload is never lost!
-      let keptMsg = '';
+
+      const safetyFile = createPreRestoreSafetyBackup();
+      const stats = restoreFromSqliteFile(
+        tempRestorePath,
+        restoreMode,
+        restoreMode === 'replace' // moveInsteadOfCopy=true in replace mode -> 1ms atomic rename!
+      );
       if (fs.existsSync(tempRestorePath)) {
         try {
-          const fallbackName = `recebido_${buildTimestampTag()}.db`;
-          fs.renameSync(tempRestorePath, path.join(BACKUPS_DIR, fallbackName));
-          keptMsg = ` (O ficheiro enviado foi guardado em backups/${fallbackName} para não precisar de o enviar novamente).`;
+          fs.unlinkSync(tempRestorePath);
         } catch {
           // ignore
         }
       }
-      res.status(500).json({ error: `Erro ao processar base de dados: ${innerErr?.message || innerErr}${keptMsg}` });
+
+      if (restoreMode === 'merge') {
+        res.json({
+          done: true,
+          message: `Migração concluída a partir de "${originalName}": ${stats.discosNovos} novos discos importados, ${stats.discosAtualizados} atualizados (${stats.discos} discos no total e ${stats.ficheiros.toLocaleString(
+            'pt-PT'
+          )} ficheiros indexados)! Salvaguarda prévia: ${safetyFile}.`,
+        });
+      } else {
+        res.json({
+          done: true,
+          message: `Base de dados SQLite migrada/restaurada com sucesso a partir de "${originalName}" (${stats.discos} discos, ${stats.ficheiros.toLocaleString(
+            'pt-PT'
+          )} ficheiros indexados)! Salvaguarda prévia: ${safetyFile}.`,
+        });
+      }
     }
-  } catch (e: any) {
-    res.status(500).json({ error: `Erro ao carregar bloco da base de dados: ${e?.message || e}` });
+  } catch (innerErr: any) {
+    let keptMsg = '';
+    if (fs.existsSync(tempRestorePath)) {
+      try {
+        const fallbackName = `recebido_${buildTimestampTag()}.db`;
+        fs.renameSync(tempRestorePath, path.join(BACKUPS_DIR, fallbackName));
+        keptMsg = ` (O ficheiro enviado foi guardado em backups/${fallbackName} para não precisar de o enviar novamente).`;
+      } catch {
+        // ignore
+      }
+    }
+    res.status(500).json({ error: `Erro ao processar base de dados: ${innerErr?.message || innerErr}${keptMsg}` });
   }
+}
+
+// 8b-finalize. Finalize parallel chunked database upload
+app.post('/api/admin/db/restore-finalize', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { uploadId, originalName, mode } = req.body;
+  if (!uploadId) {
+    res.status(400).json({ error: 'uploadId em falta.' });
+    return;
+  }
+  const safeUploadId = sanitizeFilename(String(uploadId));
+  const tempRestorePath = path.join(BACKUPS_DIR, `.tmp_restore_${safeUploadId}`);
+  finalizeDatabaseRestore(tempRestorePath, String(originalName || 'gestao_discos.db'), mode, res);
 });
 
 // 8c. Chunked Upload for Migrating Old Snap2HTML Reports (preserves original filename + auto-links + indexes)
@@ -2855,7 +2918,7 @@ app.post('/api/admin/db/migrate-report-chunk', (req, res) => {
   if (!requireAdmin(req, res)) return;
 
   try {
-    const { uploadId, chunkIndex, totalChunks, originalName, chunkBase64 } = req.body;
+    const { uploadId, chunkIndex, totalChunks, originalName, chunkBase64, compressed } = req.body;
     if (!uploadId || typeof chunkIndex !== 'number' || typeof totalChunks !== 'number' || !chunkBase64) {
       res.status(400).json({ error: 'Parâmetros de upload incompletos.' });
       return;
@@ -2871,7 +2934,8 @@ app.post('/api/admin/db/migrate-report-chunk', (req, res) => {
     const safeUploadId = sanitizeFilename(String(uploadId));
     const tempPath = path.join(RELATORIOS_DIR, `.tmp_mig_${safeUploadId}`);
 
-    const buffer = Buffer.from(chunkBase64, 'base64');
+    const rawBytes = Buffer.from(chunkBase64, 'base64');
+    const buffer = compressed ? zlib.gunzipSync(rawBytes) : rawBytes;
     if (chunkIndex === 0 && fs.existsSync(tempPath)) {
       fs.unlinkSync(tempPath);
     }

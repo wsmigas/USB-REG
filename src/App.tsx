@@ -424,6 +424,26 @@ export default function App() {
     return btoa(binary);
   };
 
+  const compressBufferIfSupported = async (
+    rawBuffer: ArrayBuffer
+  ): Promise<{ buffer: ArrayBuffer; compressed: boolean }> => {
+    if (typeof CompressionStream !== 'undefined') {
+      try {
+        const cs = new CompressionStream('gzip');
+        const writer = cs.writable.getWriter();
+        writer.write(new Uint8Array(rawBuffer));
+        writer.close();
+        const compressedBuffer = await new Response(cs.readable).arrayBuffer();
+        if (compressedBuffer.byteLength < rawBuffer.byteLength) {
+          return { buffer: compressedBuffer, compressed: true };
+        }
+      } catch {
+        // Fallback to raw uncompressed buffer
+      }
+    }
+    return { buffer: rawBuffer, compressed: false };
+  };
+
   const handleSaveDisco = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormSaving(true);
@@ -434,7 +454,7 @@ export default function App() {
       let uploadedRelatorioPath: string | null = null;
 
       if (formFile) {
-        const chunkSize = 2 * 1024 * 1024; // 2 MB per chunk to avoid proxy limits
+        const chunkSize = Math.floor(1.5 * 1024 * 1024); // 1.5 MB raw per chunk + gzip compression
         const totalChunks = Math.max(1, Math.ceil(formFile.size / chunkSize));
         const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -449,8 +469,9 @@ export default function App() {
           const start = chunkIndex * chunkSize;
           const end = Math.min(start + chunkSize, formFile.size);
           const slice = formFile.slice(start, end);
-          const buffer = await slice.arrayBuffer();
-          const chunkBase64 = arrayBufferToBase64(buffer);
+          const rawBuffer = await slice.arrayBuffer();
+          const { buffer: payloadBuf, compressed } = await compressBufferIfSupported(rawBuffer);
+          const chunkBase64 = arrayBufferToBase64(payloadBuf);
 
           const chunkRes = await fetch('/api/relatorios/upload-chunk', {
             method: 'POST',
@@ -462,6 +483,7 @@ export default function App() {
               originalName: formFile.name,
               id_disco: formData.id_disco,
               ticket_num: formData.ticket_num,
+              compressed,
               chunkBase64,
             }),
           });
@@ -715,68 +737,143 @@ export default function App() {
     e.preventDefault();
     if (!currentUser?.is_admin || !restoreUploadFile) return;
     setRestoringDb(true);
-    setRestoreProgressText('A preparar ficheiro...');
+    setRestoreProgressText('A preparar compressão e envio...');
 
     try {
-      const chunkSize = 8 * 1024 * 1024; // 8 MB per chunk (~10.6MB Base64, 4x faster while safely under 32MB proxy limit)
+      // 3 MB raw slices compressed with GZIP (~250KB-500KB over the wire).
+      // If any slice exceeds 1.4 MB after compression, it automatically splits into 1 MB sub-slices so no request ever triggers proxy 403!
+      const chunkSize = 3 * 1024 * 1024;
+      const maxWireBytes = Math.floor(1.4 * 1024 * 1024);
+      const fallbackSubChunkSize = 1 * 1024 * 1024;
       const totalChunks = Math.max(1, Math.ceil(restoreUploadFile.size / chunkSize));
       const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
-      let finalMessage = '';
-      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
-        const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
-        setRestoreProgressText(
-          totalChunks > 1
-            ? `A transferir "${restoreUploadFile.name}" (${pct}% - bloco ${chunkIndex + 1}/${totalChunks})...`
-            : `A transferir e processar "${restoreUploadFile.name}"...`
-        );
+      let nextChunkToClaim = 0;
+      let completedChunks = 0;
+      let fatalError: string | null = null;
 
-        const start = chunkIndex * chunkSize;
-        const end = Math.min(start + chunkSize, restoreUploadFile.size);
-        const slice = restoreUploadFile.slice(start, end);
-        const buffer = await slice.arrayBuffer();
-        const chunkBase64 = arrayBufferToBase64(buffer);
-
+      const sendSliceAtOffset = async (
+        chunkIndex: number,
+        byteOffset: number,
+        payloadBuf: ArrayBuffer,
+        compressed: boolean
+      ): Promise<boolean> => {
+        const chunkBase64 = arrayBufferToBase64(payloadBuf);
         let res: Response | null = null;
         let data: any = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= 4; attempt++) {
           try {
-            res = await fetch(`/api/admin/db/restore-chunk?admin_user_id=${currentUser.id}`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-admin-user-id': String(currentUser.id),
-              },
-              body: JSON.stringify({
-                admin_user_id: currentUser.id,
-                uploadId,
-                chunkIndex,
-                totalChunks,
-                originalName: restoreUploadFile.name,
-                mode: restoreUploadMode,
-                chunkBase64,
-              }),
-            });
+            res = await fetch(
+              `/api/admin/db/restore-chunk?admin_user_id=${currentUser.id}&admin_username=${encodeURIComponent(
+                currentUser.username
+              )}`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-admin-user-id': String(currentUser.id),
+                  'x-admin-username': currentUser.username,
+                },
+                body: JSON.stringify({
+                  admin_user_id: currentUser.id,
+                  admin_username: currentUser.username,
+                  uploadId,
+                  chunkIndex,
+                  totalChunks,
+                  offset: byteOffset,
+                  compressed,
+                  deferFinalize: true,
+                  originalName: restoreUploadFile.name,
+                  mode: restoreUploadMode,
+                  chunkBase64,
+                }),
+              }
+            );
             data = await safeParseJson(res);
-            if (res.ok) break;
+            if (res.ok) return true;
           } catch {
-            // Network glitch, wait 1s and retry
+            // Network glitch, wait and retry
           }
-          if (attempt < 3) {
-            await new Promise((r) => setTimeout(r, 1000));
+          if (attempt < 4) {
+            await new Promise((r) => setTimeout(r, 900 * attempt));
           }
+        }
+        fatalError = data?.error || `Erro ao transferir bloco ${chunkIndex + 1}/${totalChunks}.`;
+        return false;
+      };
+
+      const uploadSingleChunk = async (chunkIndex: number): Promise<boolean> => {
+        const start = chunkIndex * chunkSize;
+        const end = Math.min(start + chunkSize, restoreUploadFile.size);
+        const rawBuffer = await restoreUploadFile.slice(start, end).arrayBuffer();
+        const { buffer: payloadBuf, compressed } = await compressBufferIfSupported(rawBuffer);
+
+        if (payloadBuf.byteLength <= maxWireBytes) {
+          return sendSliceAtOffset(chunkIndex, start, payloadBuf, compressed);
         }
 
-        if (!res || !res.ok) {
-          showFlash(data?.error || 'Erro ao restaurar/migrar ficheiro de base de dados.', 'danger');
-          return;
+        // Fallback if slice didn't compress below 1.4MB: send in 1MB sub-slices
+        for (let subOffset = 0; subOffset < rawBuffer.byteLength; subOffset += fallbackSubChunkSize) {
+          const subEnd = Math.min(subOffset + fallbackSubChunkSize, rawBuffer.byteLength);
+          const subRaw = rawBuffer.slice(subOffset, subEnd);
+          const subComp = await compressBufferIfSupported(subRaw);
+          const ok = await sendSliceAtOffset(chunkIndex, start + subOffset, subComp.buffer, subComp.compressed);
+          if (!ok) return false;
         }
-        if (data.done) {
-          finalMessage = data.message || 'Base de dados restaurada com sucesso!';
+        return true;
+      };
+
+      const workerCount = Math.min(3, totalChunks);
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (fatalError === null) {
+          const myIndex = nextChunkToClaim++;
+          if (myIndex >= totalChunks) break;
+          const ok = await uploadSingleChunk(myIndex);
+          if (!ok) break;
+          completedChunks++;
+          const pct = Math.round((completedChunks / totalChunks) * 100);
+          setRestoreProgressText(
+            `A transferir "${restoreUploadFile.name}" com compressão GZIP (${pct}% · ${completedChunks}/${totalChunks} blocos)...`
+          );
         }
+      });
+
+      await Promise.all(workers);
+
+      if (fatalError) {
+        showFlash(fatalError, 'danger');
+        return;
       }
 
-      showFlash(finalMessage, 'success');
+      setRestoreProgressText('A aplicar e validar base de dados no servidor...');
+      const finRes = await fetch(
+        `/api/admin/db/restore-finalize?admin_user_id=${currentUser.id}&admin_username=${encodeURIComponent(
+          currentUser.username
+        )}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-user-id': String(currentUser.id),
+            'x-admin-username': currentUser.username,
+          },
+          body: JSON.stringify({
+            admin_user_id: currentUser.id,
+            admin_username: currentUser.username,
+            uploadId,
+            originalName: restoreUploadFile.name,
+            mode: restoreUploadMode,
+          }),
+        }
+      );
+
+      const finData = await safeParseJson(finRes);
+      if (!finRes.ok) {
+        showFlash(finData?.error || 'Erro ao finalizar o restauro da base de dados.', 'danger');
+        return;
+      }
+
+      showFlash(finData.message || 'Base de dados migrada/restaurada com sucesso!', 'success');
       setRestoreUploadFile(null);
       setConfirmUploadRestore(false);
       fetchDbAdminStatus();
@@ -809,7 +906,7 @@ export default function App() {
     let errorsCount = 0;
 
     try {
-      const chunkSize = 8 * 1024 * 1024; // 8 MB per chunk
+      const chunkSize = Math.floor(1.5 * 1024 * 1024); // 1.5 MB raw per chunk + gzip compression
 
       for (let i = 0; i < htmlFiles.length; i++) {
         const file = htmlFiles[i];
@@ -828,28 +925,37 @@ export default function App() {
 
           const start = chunkIndex * chunkSize;
           const end = Math.min(start + chunkSize, file.size);
-          const buffer = await file.slice(start, end).arrayBuffer();
-          const chunkBase64 = arrayBufferToBase64(buffer);
+          const rawBuffer = await file.slice(start, end).arrayBuffer();
+          const { buffer: payloadBuf, compressed } = await compressBufferIfSupported(rawBuffer);
+          const chunkBase64 = arrayBufferToBase64(payloadBuf);
 
           let res: Response | null = null;
           let data: any = null;
           for (let attempt = 1; attempt <= 3; attempt++) {
             try {
-              res = await fetch(`/api/admin/db/migrate-report-chunk?admin_user_id=${currentUser.id}`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-admin-user-id': String(currentUser.id),
-                },
-                body: JSON.stringify({
-                  admin_user_id: currentUser.id,
-                  uploadId,
-                  chunkIndex,
-                  totalChunks,
-                  originalName: file.name,
-                  chunkBase64,
-                }),
-              });
+              res = await fetch(
+                `/api/admin/db/migrate-report-chunk?admin_user_id=${currentUser.id}&admin_username=${encodeURIComponent(
+                  currentUser.username
+                )}`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-user-id': String(currentUser.id),
+                    'x-admin-username': currentUser.username,
+                  },
+                  body: JSON.stringify({
+                    admin_user_id: currentUser.id,
+                    admin_username: currentUser.username,
+                    uploadId,
+                    chunkIndex,
+                    totalChunks,
+                    originalName: file.name,
+                    compressed,
+                    chunkBase64,
+                  }),
+                }
+              );
               data = await safeParseJson(res);
               if (res.ok) break;
             } catch {
@@ -1668,9 +1774,9 @@ export default function App() {
                 {discos.map((d) => (
                   <div
                     key={d.id}
-                    className={`border rounded-lg overflow-hidden transition-colors ${
+                    className={`border rounded-xl overflow-hidden transition-colors ${
                       theme === 'dark'
-                        ? 'bg-[#212529] border-white/15 hover:border-blue-500/40'
+                        ? 'bg-slate-900/60 border-slate-800 hover:border-blue-500/40'
                         : 'bg-white border-slate-200 hover:border-blue-400'
                     }`}
                   >
@@ -1938,7 +2044,7 @@ export default function App() {
                       <div
                         className={`px-4 py-2 border-t text-xs flex items-center gap-2 ${
                           theme === 'dark'
-                            ? 'bg-black/20 border-white/10 text-slate-400'
+                            ? 'bg-slate-950/40 border-slate-800 text-slate-400'
                             : 'bg-slate-50 border-slate-200 text-slate-600'
                         }`}
                       >
