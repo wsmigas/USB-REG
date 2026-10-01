@@ -1465,6 +1465,27 @@ export default function App() {
               {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
+            <div
+              className={`px-3 py-1.5 rounded-lg border text-xs flex items-center gap-2 whitespace-nowrap shrink-0 ${
+                theme === 'dark'
+                  ? 'bg-slate-900/90 border-slate-800 text-slate-200'
+                  : 'bg-slate-100 border-slate-200 text-slate-800'
+              }`}
+              title={`Sessão iniciada como ${currentUser.username} (${currentUser.is_admin ? 'Administrador' : 'Operador'})`}
+            >
+              <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span className="font-semibold">{currentUser.username}</span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
+                  currentUser.is_admin
+                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                }`}
+              >
+                {currentUser.is_admin ? 'Admin' : 'Operador'}
+              </span>
+            </div>
+
             <button
               type="button"
               onClick={handleLogout}
