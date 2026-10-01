@@ -1166,6 +1166,20 @@ export default function App() {
 
   const formatNumber = (n: number) => n.toLocaleString('pt-PT');
 
+  const formatDatePt = (dateStr: string) => {
+    if (!dateStr) return '-';
+    const s = String(dateStr).trim();
+    const isoMatch = s.match(/^(\d{4})[-/](\d{2})[-/](\d{2})/);
+    if (isoMatch) {
+      return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    }
+    const dmyDash = s.match(/^(\d{2})-(\d{2})-(\d{4})/);
+    if (dmyDash) {
+      return `${dmyDash[1]}/${dmyDash[2]}/${dmyDash[3]}`;
+    }
+    return s;
+  };
+
   const formatBytes = (bytes: number) => {
     if (!bytes || bytes <= 0) return '-';
     if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
@@ -1779,7 +1793,7 @@ export default function App() {
                       {/* 2. Data e Ticket de Envio */}
                       <div className="min-w-0">
                         <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
-                          {d.data_entrada || '-'}
+                          {formatDatePt(d.data_entrada)}
                         </div>
                         <div className="mt-0.5 truncate">
                           <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
