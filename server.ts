@@ -759,7 +759,7 @@ app.get('/api/discos', (req, res) => {
     const sqlWhere = whereClauses.join(' AND ');
     discos = db.prepare(`SELECT * FROM discos_usb WHERE ${sqlWhere} ORDER BY ${SQL_DATA_ORDER}`).all(...params);
   } else {
-    discos = db.prepare(`SELECT * FROM discos_usb ORDER BY ${SQL_DATA_ORDER} LIMIT 50`).all();
+    discos = db.prepare(`SELECT * FROM discos_usb ORDER BY ${SQL_DATA_ORDER} LIMIT 25`).all();
   }
 
   const enrichedDiscos = discos.map((d) => {
