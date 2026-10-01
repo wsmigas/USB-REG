@@ -9,7 +9,7 @@ import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3005;
+const PORT = 3005;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -3068,11 +3068,8 @@ async function startServer() {
     console.log(`RIDIS Server running on http://localhost:${PORT}`);
   });
 
-  if (PORT !== 3000) {
-    const previewServer = app.listen(3000, '0.0.0.0');
-    previewServer.on('error', () => {
-      // Ignore if port 3000 is occupied on an external host
-    });
+  if (process.env.APPLET_ID) {
+    app.listen(3000, '0.0.0.0');
   }
 }
 
