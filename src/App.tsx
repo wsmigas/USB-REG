@@ -1611,7 +1611,7 @@ export default function App() {
                     type="text"
                     value={busca}
                     onChange={(e) => setBusca(e.target.value)}
-                    placeholder="Pesquisar disco, ticket, cota PT-... ou ficheiro .tif (* ou ?)..."
+                    placeholder="Pesquisar disco, ticket ou código de referência PT-... (* ou ?)..."
                     className={`w-full pl-9 pr-8 py-2 rounded-lg border text-xs font-mono focus:outline-none focus:border-blue-500 ${
                       theme === 'dark'
                         ? 'bg-slate-950 border-slate-800 text-slate-100 placeholder:text-slate-500'
@@ -1760,13 +1760,20 @@ export default function App() {
                     Armazenado no Servidor
                   </span>
                   <span>·</span>
-                  <span>Exemplos pesquisa TIF:</span>
+                  <span>Exemplos pesquisa de documentos:</span>
                   <button
                     type="button"
-                    onClick={() => setBusca('PT-ANTT*m0001.tif')}
+                    onClick={() => setBusca('PT/TT/JC')}
                     className="font-mono text-blue-400 hover:underline cursor-pointer"
                   >
-                    PT-ANTT*m0001.tif
+                    PT/TT/JC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBusca('PT-TT-JC')}
+                    className="font-mono text-blue-400 hover:underline cursor-pointer"
+                  >
+                    PT-TT-JC
                   </button>
                   <button
                     type="button"
@@ -1775,20 +1782,13 @@ export default function App() {
                   >
                     PT/ADPRT/*
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setBusca('*_m0015.tif')}
-                    className="font-mono text-blue-400 hover:underline cursor-pointer"
-                  >
-                    *_m0015.tif
-                  </button>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <span className={`font-mono tabular-nums ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                     {hasActiveFilters
-                      ? `Filtros ativos (${discos.length} registos encontrados)`
-                      : `A mostrar ${discos.length} registos mais recentes`}
+                      ? `Filtros ativos (${formatNumber(stats.total)} registos encontrados)`
+                      : `A mostrar ${discos.length} de ${formatNumber(stats.total)} registos`}
                   </span>
                   {hasActiveFilters && (
                     <button
@@ -2464,7 +2464,7 @@ export default function App() {
                 <div className="text-xl font-bold font-mono tabular-nums mt-1 text-blue-400">
                   {formatNumber(dbAdminStatus?.counts.relatorio_ficheiros || 0)}
                 </div>
-                <div className="text-[11px] text-slate-400 mt-0.5">ficheiros .TIF indexados</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">códigos de referência indexados</div>
               </div>
 
               <div className="p-4">
@@ -2601,60 +2601,36 @@ export default function App() {
 
                 <div className="space-y-2.5 pt-1">
                   <div className="text-xs font-semibold text-slate-400">
-                    Guardar Ponto de Restauro no Servidor (<span className="font-mono">backups/</span>):
+                    Guardar Ponto de Restauro da Base de Dados no Servidor (<span className="font-mono">backups/</span>):
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
                     <button
                       type="button"
                       onClick={() => handleCreateBackup('sqlite')}
                       disabled={creatingBackupMode !== null}
-                      className="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                      className="w-full px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
                     >
                       <Database className="w-4 h-4" />
                       {creatingBackupMode === 'sqlite' ? 'A criar Snapshot...' : 'Criar Snapshot SQLite (.db)'}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleCreateBackup('full_json')}
-                      disabled={creatingBackupMode !== null}
-                      className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-                    >
-                      <Archive className="w-4 h-4" />
-                      {creatingBackupMode === 'full_json'
-                        ? 'A empacotar...'
-                        : 'Criar Backup Completo (BD + HTML)'}
                     </button>
                   </div>
                 </div>
 
                 <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
                   <div className="text-xs font-semibold text-slate-400">
-                    Descarregar Cópia de Segurança para o Computador:
+                    Descarregar Base de Dados para o Computador:
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
                     <a
                       href={`/api/admin/db/download-sqlite?admin_user_id=${currentUser.id}`}
-                      className={`px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
+                      className={`w-full px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
                         theme === 'dark'
                           ? 'border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-200'
                           : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-800'
                       }`}
                     >
                       <Download className="w-4 h-4 text-blue-400" />
-                      Descarregar SQLite (.db)
-                    </a>
-
-                    <a
-                      href={`/api/admin/db/download-full?admin_user_id=${currentUser.id}`}
-                      className={`px-4 py-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-2 transition-colors ${
-                        theme === 'dark'
-                          ? 'border-slate-700 bg-slate-950 hover:bg-slate-800 text-emerald-400'
-                          : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-emerald-700'
-                      }`}
-                    >
-                      <Download className="w-4 h-4" />
-                      Descarregar Completo (.json)
+                      Descarregar Base de Dados SQLite (.db)
                     </a>
                   </div>
                 </div>
@@ -2673,8 +2649,7 @@ export default function App() {
                   </h2>
                   <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                     Carregue o ficheiro <span className="font-mono">gestao_discos.db</span> da sua aplicação antiga (ou um
-                    backup <span className="font-mono">.db</span> / <span className="font-mono">.json</span>). O envio é
-                    feito em blocos seguros de 2 MB (suporta bases de dados de qualquer dimensão).
+                    backup <span className="font-mono">.db</span>). O envio é feito em blocos seguros com compressão GZIP.
                   </p>
                 </div>
 
@@ -2686,7 +2661,7 @@ export default function App() {
                   >
                     <input
                       type="file"
-                      accept=".db,.sqlite,.sqlite3,.json"
+                      accept=".db,.sqlite,.sqlite3"
                       onChange={(e) => {
                         setRestoreUploadFile(e.target.files?.[0] || null);
                         setConfirmUploadRestore(false);
@@ -3648,7 +3623,7 @@ export default function App() {
                       type="text"
                       value={inspectQuery}
                       onChange={(e) => setInspectQuery(e.target.value)}
-                      placeholder="Filtrar ficheiros .tif neste disco (ex: m0005.tif)..."
+                      placeholder="Filtrar documentos / códigos de referência neste disco (ex: PT-TT-JC)..."
                       className={`w-full pl-9 pr-4 py-2 rounded-lg border text-xs font-mono ${
                         theme === 'dark'
                           ? 'bg-slate-950 border-slate-800 text-slate-100'
@@ -3656,14 +3631,6 @@ export default function App() {
                       }`}
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-xs cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={inspectOnlyTif}
-                      onChange={(e) => setInspectOnlyTif(e.target.checked)}
-                    />
-                    <span>Apenas matrizes .TIF</span>
-                  </label>
                 </div>
 
                 <div className="flex-1 overflow-y-auto">
@@ -3677,8 +3644,8 @@ export default function App() {
                         }`}
                       >
                         <th className="py-2.5 px-4">Pasta no Disco</th>
-                        <th className="py-2.5 px-4">Nome do Ficheiro Indexado</th>
-                        <th className="py-2.5 px-4 text-right">Tamanho</th>
+                        <th className="py-2.5 px-4">Código de Referência / Documento</th>
+                        <th className="py-2.5 px-4 text-right">Tamanho Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60 text-xs font-mono">

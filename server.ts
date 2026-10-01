@@ -771,16 +771,34 @@ app.post('/api/login', (req, res) => {
   }
 });
 
-function buildFileLikePattern(rawQuery: string): { likePattern: string; normalized: string } {
-  let normalized = rawQuery.trim().replace(/\//g, '-').toUpperCase();
+function buildFileLikePattern(rawQuery: string): {
+  likePattern: string;
+  padraoHifen: string;
+  padraoBarra: string;
+  normalized: string;
+} {
+  let cleaned = rawQuery.trim().toUpperCase();
   // Strip .tif/.tiff and _m0001 matrix suffix if the user pasted a full image filename
-  normalized = normalized.replace(/\.(?:TIFF?)$/i, '');
-  normalized = normalized.replace(/_[MM]?\d+.*$/i, '');
-  if (normalized.includes('*') || normalized.includes('?')) {
-    const likePattern = normalized.replace(/\*/g, '%').replace(/\?/g, '_');
-    return { likePattern, normalized };
-  }
-  return { likePattern: `%${normalized}%`, normalized };
+  cleaned = cleaned.replace(/\.(?:TIFF?)$/i, '');
+  cleaned = cleaned.replace(/_[MM]?\d+.*$/i, '');
+
+  const normalized = cleaned.replace(/\//g, '-');
+  const slashVersion = cleaned.replace(/-/g, '/');
+
+  const toSqlLike = (s: string) => {
+    if (s.includes('*') || s.includes('?')) {
+      return s.replace(/\*/g, '%').replace(/\?/g, '_');
+    }
+    return `%${s}%`;
+  };
+
+  const likePattern = toSqlLike(normalized);
+  return {
+    likePattern,
+    padraoHifen: likePattern,
+    padraoBarra: toSqlLike(slashVersion),
+    normalized,
+  };
 }
 
 // Main inventory & unified search endpoint
@@ -840,19 +858,20 @@ app.get('/api/discos', (req, res) => {
   let likePatternForSamples = '';
 
   if (busca) {
-    const isWildcard = busca.includes('*') || busca.includes('?');
-    const padraoTexto = isWildcard ? busca.replace(/\*/g, '%').replace(/\?/g, '_') : `%${busca}%`;
-
-    const { likePattern } = buildFileLikePattern(busca);
+    const { likePattern, padraoHifen, padraoBarra } = buildFileLikePattern(busca);
     likePatternForSamples = likePattern;
+
     const matchingDiscoSummary = db
       .prepare(
         `SELECT disco_id, COUNT(*) as total_matches
          FROM relatorio_ficheiros
-         WHERE nome_ficheiro LIKE ? OR pasta LIKE ?
+         WHERE nome_ficheiro LIKE ?
          GROUP BY disco_id`
       )
-      .all(likePattern, likePattern) as { disco_id: number; total_matches: number }[];
+      .all(likePattern) as {
+      disco_id: number;
+      total_matches: number;
+    }[];
 
     const matchedDiscoIds = new Set<number>();
     for (const row of matchingDiscoSummary) {
@@ -861,17 +880,27 @@ app.get('/api/discos', (req, res) => {
     }
 
     const textClause = `
-      (id_disco LIKE ? 
-       OR projeto LIKE ?
-       OR arquivo LIKE ? 
-       OR remetente LIKE ? 
-       OR ticket_num LIKE ? 
-       OR numero_serie LIKE ? 
-       OR localizacao LIKE ?
-       OR ticket_integracao LIKE ?
-       OR observacoes LIKE ?)
+      (id_disco LIKE ? OR id_disco LIKE ?
+       OR projeto LIKE ? OR projeto LIKE ?
+       OR arquivo LIKE ? OR arquivo LIKE ?
+       OR remetente LIKE ? OR remetente LIKE ?
+       OR ticket_num LIKE ? OR ticket_num LIKE ?
+       OR numero_serie LIKE ? OR numero_serie LIKE ?
+       OR localizacao LIKE ? OR localizacao LIKE ?
+       OR ticket_integracao LIKE ? OR ticket_integracao LIKE ?
+       OR observacoes LIKE ? OR observacoes LIKE ?)
     `;
-    const textParams = Array(9).fill(padraoTexto);
+    const textParams = [
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+    ];
 
     if (matchedDiscoIds.size > 0) {
       const idList = Array.from(matchedDiscoIds);
@@ -935,7 +964,7 @@ app.get('/api/discos', (req, res) => {
     ? db.prepare(
         `SELECT nome_ficheiro
          FROM relatorio_ficheiros
-         WHERE disco_id = ? AND (nome_ficheiro LIKE ? OR pasta LIKE ?)
+         WHERE disco_id = ? AND nome_ficheiro LIKE ?
          ORDER BY nome_ficheiro
          LIMIT 10`
       )
@@ -945,7 +974,7 @@ app.get('/api/discos', (req, res) => {
     const totalMatches = matchedCountByDisco[d.id] || 0;
     let matchedFiles: string[] = [];
     if (sampleFilesStmt && totalMatches > 0) {
-      const sampleRows = sampleFilesStmt.all(d.id, likePatternForSamples, likePatternForSamples) as {
+      const sampleRows = sampleFilesStmt.all(d.id, likePatternForSamples) as {
         nome_ficheiro: string;
       }[];
       matchedFiles = sampleRows.map((r) => r.nome_ficheiro);
@@ -1502,21 +1531,35 @@ app.get('/api/exportar-csv', (req, res) => {
 
   let discos: any[] = [];
   if (busca) {
-    const isWildcard = busca.includes('*') || busca.includes('?');
-    const padrao = isWildcard ? busca.replace(/\*/g, '%').replace(/\?/g, '_') : `%${busca}%`;
-    const { likePattern } = buildFileLikePattern(busca);
+    const { likePattern, padraoHifen, padraoBarra } = buildFileLikePattern(busca);
     const matchingDiscoRows = db
       .prepare(
-        `SELECT DISTINCT disco_id FROM relatorio_ficheiros WHERE nome_ficheiro LIKE ? OR pasta LIKE ?`
+        `SELECT DISTINCT disco_id FROM relatorio_ficheiros WHERE nome_ficheiro LIKE ?`
       )
-      .all(likePattern, likePattern) as { disco_id: number }[];
+      .all(likePattern) as { disco_id: number }[];
 
     const textClause = `
-      (id_disco LIKE ? OR projeto LIKE ? OR arquivo LIKE ? OR remetente LIKE ? 
-       OR ticket_num LIKE ? OR numero_serie LIKE ? OR localizacao LIKE ? 
-       OR ticket_integracao LIKE ? OR observacoes LIKE ?)
+      (id_disco LIKE ? OR id_disco LIKE ?
+       OR projeto LIKE ? OR projeto LIKE ?
+       OR arquivo LIKE ? OR arquivo LIKE ?
+       OR remetente LIKE ? OR remetente LIKE ?
+       OR ticket_num LIKE ? OR ticket_num LIKE ?
+       OR numero_serie LIKE ? OR numero_serie LIKE ?
+       OR localizacao LIKE ? OR localizacao LIKE ?
+       OR ticket_integracao LIKE ? OR ticket_integracao LIKE ?
+       OR observacoes LIKE ? OR observacoes LIKE ?)
     `;
-    const textParams = Array(9).fill(padrao);
+    const textParams = [
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+      padraoHifen, padraoBarra,
+    ];
 
     if (matchingDiscoRows.length > 0) {
       const idList = matchingDiscoRows.map((r) => r.disco_id);
