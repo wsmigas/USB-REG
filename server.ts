@@ -1861,7 +1861,7 @@ function requireAdmin(req: express.Request, res: express.Response): boolean {
   ).trim();
   const adminId = Number(rawAdminId || 0);
   if (!adminId && !rawAdminUsername) {
-    res.status(403).json({ error: 'Acesso restrito: este módulo apenas pode ser acedido por Administradores.' });
+    res.status(403).json({ error: 'Acesso restrito: este módulo apenas pode ser acedido pelo login "admin".' });
     return false;
   }
 
@@ -1869,13 +1869,13 @@ function requireAdmin(req: express.Request, res: express.Response): boolean {
   if (adminId) {
     user = db.prepare('SELECT id, username, is_admin FROM usuarios WHERE id = ?').get(adminId) as any;
   }
-  if ((!user || !user.is_admin) && rawAdminUsername) {
+  if ((!user || user.username.toLowerCase() !== 'admin') && rawAdminUsername) {
     user = db
       .prepare('SELECT id, username, is_admin FROM usuarios WHERE LOWER(username) = LOWER(?)')
       .get(rawAdminUsername) as any;
   }
-  if (!user || !user.is_admin) {
-    res.status(403).json({ error: 'Permissão recusada: apenas utilizadores Administradores podem gerir a base de dados.' });
+  if (!user || user.username.toLowerCase() !== 'admin') {
+    res.status(403).json({ error: 'Permissão recusada: apenas o utilizador "admin" tem acesso ao módulo Administração BD.' });
     return false;
   }
   return true;

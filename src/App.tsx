@@ -277,13 +277,16 @@ export default function App() {
     }
   }, [currentUser, activeTab, fetchUsuarios]);
 
-  // Fetch Database Admin Status (Admin Only)
+  // Fetch Database Admin Status (Strictly login 'admin' Only)
   const fetchDbAdminStatus = useCallback(async () => {
-    if (!currentUser?.is_admin) return;
+    if (currentUser?.username.toLowerCase() !== 'admin') return;
     setDbAdminLoading(true);
     try {
       const res = await fetch(`/api/admin/db/status?admin_user_id=${currentUser.id}`, {
-        headers: { 'x-admin-user-id': String(currentUser.id) },
+        headers: {
+          'x-admin-user-id': String(currentUser.id),
+          'x-admin-username': currentUser.username,
+        },
       });
       if (res.ok) {
         const data = await res.json();
@@ -297,14 +300,17 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (currentUser?.is_admin && activeTab === 'admin_bd') {
+    if (currentUser?.username.toLowerCase() === 'admin' && activeTab === 'admin_bd') {
       fetchDbAdminStatus();
     }
   }, [currentUser, activeTab, fetchDbAdminStatus]);
 
-  // Ensure non-admin users cannot remain on admin tabs
+  // Ensure users cannot remain on restricted tabs
   useEffect(() => {
-    if (currentUser && !currentUser.is_admin && (activeTab === 'usuarios' || activeTab === 'admin_bd')) {
+    if (currentUser && !currentUser.is_admin && activeTab === 'usuarios') {
+      setActiveTab('inventario');
+    }
+    if (currentUser && currentUser.username.toLowerCase() !== 'admin' && activeTab === 'admin_bd') {
       setActiveTab('inventario');
     }
   }, [currentUser, activeTab]);
@@ -1416,35 +1422,35 @@ export default function App() {
               Inventário de Discos
             </button>
             {currentUser.is_admin && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('usuarios')}
-                  className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
-                    activeTab === 'usuarios'
-                      ? 'border-blue-500 text-blue-500 font-semibold'
-                      : theme === 'dark'
-                      ? 'border-transparent text-slate-400 hover:text-slate-100'
-                      : 'border-transparent text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Utilizadores
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('admin_bd')}
-                  className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-                    activeTab === 'admin_bd'
-                      ? 'border-blue-500 text-blue-500 font-semibold'
-                      : theme === 'dark'
-                      ? 'border-transparent text-slate-400 hover:text-slate-100'
-                      : 'border-transparent text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <Database className="w-3.5 h-3.5" />
-                  Administração BD
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setActiveTab('usuarios')}
+                className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer ${
+                  activeTab === 'usuarios'
+                    ? 'border-blue-500 text-blue-500 font-semibold'
+                    : theme === 'dark'
+                    ? 'border-transparent text-slate-400 hover:text-slate-100'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Utilizadores
+              </button>
+            )}
+            {currentUser.username.toLowerCase() === 'admin' && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('admin_bd')}
+                className={`whitespace-nowrap shrink-0 py-1 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  activeTab === 'admin_bd'
+                    ? 'border-blue-500 text-blue-500 font-semibold'
+                    : theme === 'dark'
+                    ? 'border-transparent text-slate-400 hover:text-slate-100'
+                    : 'border-transparent text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                Administração BD
+              </button>
             )}
           </nav>
 
@@ -2345,8 +2351,8 @@ export default function App() {
           </div>
         )}
 
-        {/* TAB 4: MÓDULO DE ADMINISTRAÇÃO DA BASE DE DADOS (EXCLUSIVO PARA ADMINISTRADORES) */}
-        {activeTab === 'admin_bd' && currentUser.is_admin && (
+        {/* TAB 4: MÓDULO DE ADMINISTRAÇÃO DA BASE DE DADOS (EXCLUSIVO PARA O LOGIN ADMIN) */}
+        {activeTab === 'admin_bd' && currentUser.username.toLowerCase() === 'admin' && (
           <div className="space-y-6">
             <div className="flex flex-wrap items-end justify-between gap-4">
               <div>
@@ -2355,7 +2361,7 @@ export default function App() {
                   Administração da Base de Dados Local — Backup e Restauro
                 </h1>
                 <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                  Módulo exclusivo para Administradores · Gestão de cópias de segurança, restauro de snapshots e
+                  Módulo exclusivo para o login <span className="font-mono font-semibold">admin</span> · Gestão de cópias de segurança, restauro de snapshots e
                   manutenção da base de dados SQLite (<span className="font-mono">gestao_discos.db</span>) e relatórios (
                   <span className="font-mono">relatorios/</span>).
                 </p>
