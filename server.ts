@@ -7,7 +7,7 @@ import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -1827,7 +1827,125 @@ function createPreRestoreSafetyBackup(): string {
   return filename;
 }
 
-function restoreFromSqliteFile(sqliteFilePath: string): { discos: number; ficheiros: number; usuarios: number } {
+function normalizeRelatorioFilename(rawPath: any): string | null {
+  if (!rawPath) return null;
+  const s = String(rawPath).trim();
+  if (!s) return null;
+  const base = path.basename(s.replace(/\\/g, '/')).trim();
+  return base || null;
+}
+
+function autoLinkAndIndexReports(forceReindexAll = false): {
+  newlyLinked: number;
+  indexedDisks: number;
+  totalFilesIndexed: number;
+  totalTifIndexed: number;
+} {
+  if (!fs.existsSync(RELATORIOS_DIR)) {
+    return { newlyLinked: 0, indexedDisks: 0, totalFilesIndexed: 0, totalTifIndexed: 0 };
+  }
+
+  const htmlFiles = fs
+    .readdirSync(RELATORIOS_DIR)
+    .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+
+  const lowerToActual = new Map<string, string>();
+  for (const f of htmlFiles) {
+    lowerToActual.set(f.toLowerCase(), f);
+  }
+
+  const allDiscos = db
+    .prepare('SELECT id, id_disco, ticket_num, relatorio_path, total_imagens FROM discos_usb ORDER BY id ASC')
+    .all() as {
+    id: number;
+    id_disco: string;
+    ticket_num: string;
+    relatorio_path: string | null;
+    total_imagens: number;
+  }[];
+
+  const claimedFilesLower = new Set<string>();
+  for (const d of allDiscos) {
+    const norm = normalizeRelatorioFilename(d.relatorio_path);
+    if (norm && lowerToActual.has(norm.toLowerCase())) {
+      claimedFilesLower.add(norm.toLowerCase());
+    }
+  }
+
+  let newlyLinked = 0;
+  let indexedDisks = 0;
+  let totalFilesIndexed = 0;
+  let totalTifIndexed = 0;
+
+  for (const d of allDiscos) {
+    let norm = normalizeRelatorioFilename(d.relatorio_path);
+    let actualFile = norm ? lowerToActual.get(norm.toLowerCase()) : undefined;
+
+    if (actualFile && d.relatorio_path !== actualFile) {
+      db.prepare('UPDATE discos_usb SET relatorio_path = ? WHERE id = ?').run(actualFile, d.id);
+    }
+
+    // If disk has no valid existing HTML file, try matching an unclaimed HTML file by id_disco or ticket_num
+    if (!actualFile) {
+      const idRaw = (d.id_disco || '').trim().toLowerCase();
+      const idSafe = sanitizeFilename(d.id_disco || '').toLowerCase();
+      const tickRaw = (d.ticket_num || '').trim().toLowerCase();
+      const tickSafe = sanitizeFilename(d.ticket_num || '').toLowerCase();
+
+      for (const f of htmlFiles) {
+        const fLower = f.toLowerCase();
+        if (claimedFilesLower.has(fLower)) continue;
+        const ext = path.extname(fLower);
+        const stem = path.basename(fLower, ext);
+
+        const matchesId =
+          (idRaw && (stem === idRaw || stem.startsWith(`${idRaw}_`))) ||
+          (idSafe && (stem === idSafe || stem.startsWith(`${idSafe}_`)));
+        const matchesTicket =
+          !matchesId &&
+          ((tickRaw && (stem === tickRaw || stem.startsWith(`${tickRaw}_`))) ||
+            (tickSafe && (stem === tickSafe || stem.startsWith(`${tickSafe}_`))));
+
+        if (matchesId || matchesTicket) {
+          actualFile = f;
+          claimedFilesLower.add(fLower);
+          db.prepare('UPDATE discos_usb SET relatorio_path = ? WHERE id = ?').run(actualFile, d.id);
+          newlyLinked++;
+          break;
+        }
+      }
+    }
+
+    if (actualFile) {
+      const currentIndexed = (
+        db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros WHERE disco_id = ?').get(d.id) as { c: number }
+      )?.c;
+
+      if (forceReindexAll || !currentIndexed) {
+        const resIdx = indexarRelatorio(d.id, path.join(RELATORIOS_DIR, actualFile));
+        indexedDisks++;
+        totalFilesIndexed += resIdx.total;
+        totalTifIndexed += resIdx.tifCount;
+        if ((!d.total_imagens || d.total_imagens === 0) && resIdx.tifCount > 0) {
+          db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(resIdx.tifCount, d.id);
+        }
+      }
+    }
+  }
+
+  return { newlyLinked, indexedDisks, totalFilesIndexed, totalTifIndexed };
+}
+
+function restoreFromSqliteFile(
+  sqliteFilePath: string,
+  mode: 'replace' | 'merge' = 'replace'
+): {
+  discos: number;
+  discosNovos: number;
+  discosAtualizados: number;
+  ficheiros: number;
+  usuarios: number;
+} {
   const tempDb = new DatabaseSync(sqliteFilePath);
   let discosRows: any[] = [];
   let usuariosRows: any[] = [];
@@ -1854,68 +1972,186 @@ function restoreFromSqliteFile(sqliteFilePath: string): { discos: number; fichei
 
   tempDb.close();
 
+  let discosNovos = 0;
+  let discosAtualizados = 0;
+
   db.exec('BEGIN IMMEDIATE TRANSACTION');
   try {
-    db.prepare('DELETE FROM relatorio_ficheiros').run();
-    db.prepare('DELETE FROM discos_usb').run();
+    if (mode === 'replace') {
+      db.prepare('DELETE FROM relatorio_ficheiros').run();
+      db.prepare('DELETE FROM discos_usb').run();
 
-    const insDisco = db.prepare(`
-      INSERT INTO discos_usb (
-        id, arquivo, remetente, data_entrada, ticket_num, id_disco, projeto,
-        localizacao, tamanho_disco, marca, numero_serie,
-        verificado, ticket_integracao, integrado,
-        armazenado_servidor, total_imagens, observacoes, created_at, relatorio_path
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
+      const insDisco = db.prepare(`
+        INSERT INTO discos_usb (
+          id, arquivo, remetente, data_entrada, ticket_num, id_disco, projeto,
+          localizacao, tamanho_disco, marca, numero_serie,
+          verificado, ticket_integracao, integrado,
+          armazenado_servidor, total_imagens, observacoes, created_at, relatorio_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
 
-    for (const d of discosRows) {
-      insDisco.run(
-        d.id,
-        d.arquivo ?? '',
-        d.remetente ?? '',
-        d.data_entrada ?? '',
-        d.ticket_num ?? '',
-        d.id_disco ?? `DISCO-${d.id}`,
-        d.projeto ?? '',
-        d.localizacao ?? '',
-        d.tamanho_disco ?? '',
-        d.marca ?? '',
-        d.numero_serie ?? '',
-        d.verificado ? 1 : 0,
-        d.ticket_integracao ?? '',
-        d.integrado ? 1 : 0,
-        d.armazenado_servidor ? 1 : 0,
-        Number(d.total_imagens) || 0,
-        d.observacoes ?? '',
-        d.created_at ?? new Date().toISOString(),
-        d.relatorio_path ?? null
-      );
-    }
+      for (const d of discosRows) {
+        insDisco.run(
+          d.id,
+          d.arquivo ?? '',
+          d.remetente ?? '',
+          formatarDataIso(d.data_entrada ?? ''),
+          d.ticket_num ?? '',
+          d.id_disco ?? `DISCO-${d.id}`,
+          d.projeto ?? '',
+          d.localizacao ?? '',
+          d.tamanho_disco ?? '',
+          d.marca ?? '',
+          d.numero_serie ?? '',
+          d.verificado ? 1 : 0,
+          d.ticket_integracao ?? '',
+          d.integrado ? 1 : 0,
+          d.armazenado_servidor ? 1 : 0,
+          Number(d.total_imagens) || 0,
+          d.observacoes ?? '',
+          d.created_at ?? new Date().toISOString(),
+          normalizeRelatorioFilename(d.relatorio_path)
+        );
+        discosNovos++;
+      }
 
-    if (ficheirosRows.length > 0) {
-      const insFich = db.prepare(
+      if (ficheirosRows.length > 0) {
+        const insFich = db.prepare(
+          'INSERT INTO relatorio_ficheiros (disco_id, nome_ficheiro, tamanho_bytes, pasta) VALUES (?, ?, ?, ?)'
+        );
+        for (const f of ficheirosRows) {
+          insFich.run(f.disco_id, f.nome_ficheiro, Number(f.tamanho_bytes) || 0, f.pasta ?? '');
+        }
+      }
+
+      if (usuariosRows.length > 0) {
+        const hasAdmin = usuariosRows.some((u) => u.is_admin);
+        if (hasAdmin) {
+          db.prepare('DELETE FROM usuarios').run();
+          const insUser = db.prepare(
+            'INSERT INTO usuarios (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)'
+          );
+          for (const u of usuariosRows) {
+            insUser.run(
+              u.id,
+              u.username,
+              u.password_hash,
+              u.is_admin ? 1 : 0,
+              u.created_at ?? new Date().toISOString()
+            );
+          }
+        }
+      }
+    } else {
+      // MERGE MODE: Keep current disks and merge/insert disks from the old database
+      const filesByOldDiscoId = new Map<number, any[]>();
+      for (const f of ficheirosRows) {
+        const oldId = Number(f.disco_id);
+        if (!filesByOldDiscoId.has(oldId)) {
+          filesByOldDiscoId.set(oldId, []);
+        }
+        filesByOldDiscoId.get(oldId)!.push(f);
+      }
+
+      const findByIdDisco = db.prepare('SELECT id, relatorio_path FROM discos_usb WHERE LOWER(id_disco) = LOWER(?)');
+      const updateDiscoStmt = db.prepare(`
+        UPDATE discos_usb SET
+          arquivo = ?, remetente = ?, data_entrada = ?, ticket_num = ?,
+          projeto = ?, localizacao = ?, tamanho_disco = ?, marca = ?, numero_serie = ?,
+          verificado = ?, ticket_integracao = ?, integrado = ?, armazenado_servidor = ?,
+          total_imagens = ?, observacoes = ?, relatorio_path = COALESCE(?, relatorio_path)
+        WHERE id = ?
+      `);
+      const insertDiscoStmt = db.prepare(`
+        INSERT INTO discos_usb (
+          arquivo, remetente, data_entrada, ticket_num, id_disco, projeto,
+          localizacao, tamanho_disco, marca, numero_serie,
+          verificado, ticket_integracao, integrado,
+          armazenado_servidor, total_imagens, observacoes, created_at, relatorio_path
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const delFichStmt = db.prepare('DELETE FROM relatorio_ficheiros WHERE disco_id = ?');
+      const insFichStmt = db.prepare(
         'INSERT INTO relatorio_ficheiros (disco_id, nome_ficheiro, tamanho_bytes, pasta) VALUES (?, ?, ?, ?)'
       );
-      for (const f of ficheirosRows) {
-        insFich.run(f.disco_id, f.nome_ficheiro, Number(f.tamanho_bytes) || 0, f.pasta ?? '');
-      }
-    }
 
-    if (usuariosRows.length > 0) {
-      const hasAdmin = usuariosRows.some((u) => u.is_admin);
-      if (hasAdmin) {
-        db.prepare('DELETE FROM usuarios').run();
+      for (const d of discosRows) {
+        const idDiscoVal = String(d.id_disco || d.ticket_num || `DISCO-${d.id}`).trim();
+        const normRel = normalizeRelatorioFilename(d.relatorio_path);
+        const existing = findByIdDisco.get(idDiscoVal) as { id: number; relatorio_path: string | null } | undefined;
+
+        let targetDiscoId: number;
+        if (existing) {
+          updateDiscoStmt.run(
+            d.arquivo ?? '',
+            d.remetente ?? '',
+            formatarDataIso(d.data_entrada ?? ''),
+            d.ticket_num ?? '',
+            d.projeto ?? '',
+            d.localizacao ?? '',
+            d.tamanho_disco ?? '',
+            d.marca ?? '',
+            d.numero_serie ?? '',
+            d.verificado ? 1 : 0,
+            d.ticket_integracao ?? '',
+            d.integrado ? 1 : 0,
+            d.armazenado_servidor ? 1 : 0,
+            Number(d.total_imagens) || 0,
+            d.observacoes ?? '',
+            normRel,
+            existing.id
+          );
+          targetDiscoId = existing.id;
+          discosAtualizados++;
+        } else {
+          const resIns = insertDiscoStmt.run(
+            d.arquivo ?? '',
+            d.remetente ?? '',
+            formatarDataIso(d.data_entrada ?? ''),
+            d.ticket_num ?? '',
+            idDiscoVal,
+            d.projeto ?? '',
+            d.localizacao ?? '',
+            d.tamanho_disco ?? '',
+            d.marca ?? '',
+            d.numero_serie ?? '',
+            d.verificado ? 1 : 0,
+            d.ticket_integracao ?? '',
+            d.integrado ? 1 : 0,
+            d.armazenado_servidor ? 1 : 0,
+            Number(d.total_imagens) || 0,
+            d.observacoes ?? '',
+            d.created_at ?? new Date().toISOString(),
+            normRel
+          );
+          targetDiscoId = Number(resIns.lastInsertRowid);
+          discosNovos++;
+        }
+
+        const oldFiles = filesByOldDiscoId.get(Number(d.id)) || [];
+        if (oldFiles.length > 0) {
+          delFichStmt.run(targetDiscoId);
+          for (const f of oldFiles) {
+            insFichStmt.run(targetDiscoId, f.nome_ficheiro, Number(f.tamanho_bytes) || 0, f.pasta ?? '');
+          }
+        }
+      }
+
+      // Merge any non-existing users from old database
+      if (usuariosRows.length > 0) {
+        const checkUser = db.prepare('SELECT id FROM usuarios WHERE LOWER(username) = LOWER(?)');
         const insUser = db.prepare(
-          'INSERT INTO usuarios (id, username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?)'
+          'INSERT INTO usuarios (username, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)'
         );
         for (const u of usuariosRows) {
-          insUser.run(
-            u.id,
-            u.username,
-            u.password_hash,
-            u.is_admin ? 1 : 0,
-            u.created_at ?? new Date().toISOString()
-          );
+          if (u.username && !checkUser.get(u.username)) {
+            insUser.run(
+              u.username,
+              u.password_hash,
+              u.is_admin ? 1 : 0,
+              u.created_at ?? new Date().toISOString()
+            );
+          }
         }
       }
     }
@@ -1930,20 +2166,8 @@ function restoreFromSqliteFile(sqliteFilePath: string): { discos: number; fichei
     throw err;
   }
 
-  // If any disk has a relatorio_path in ./relatorios but 0 indexed files in the restored DB, index it automatically
-  for (const d of discosRows) {
-    if (d.relatorio_path) {
-      const count = (
-        db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros WHERE disco_id = ?').get(d.id) as { c: number }
-      )?.c;
-      if (!count) {
-        const fullHtmlPath = path.join(RELATORIOS_DIR, path.basename(String(d.relatorio_path)));
-        if (fs.existsSync(fullHtmlPath)) {
-          indexarRelatorio(d.id, fullHtmlPath);
-        }
-      }
-    }
-  }
+  // Automatically link and index any matching HTML reports already present in ./relatorios
+  autoLinkAndIndexReports(false);
 
   try {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
@@ -1951,11 +2175,14 @@ function restoreFromSqliteFile(sqliteFilePath: string): { discos: number; fichei
     // ignore
   }
 
+  const finalDiscosCount = (db.prepare('SELECT COUNT(*) as c FROM discos_usb').get() as { c: number })?.c || 0;
   const finalFichCount = (db.prepare('SELECT COUNT(*) as c FROM relatorio_ficheiros').get() as { c: number })?.c || 0;
   const finalUserCount = (db.prepare('SELECT COUNT(*) as c FROM usuarios').get() as { c: number })?.c || 0;
 
   return {
-    discos: discosRows.length,
+    discos: finalDiscosCount,
+    discosNovos,
+    discosAtualizados,
     ficheiros: finalFichCount,
     usuarios: finalUserCount,
   };
@@ -2101,6 +2328,9 @@ app.get('/api/admin/db/status', (req, res) => {
 
   let relatoriosHtmlCount = 0;
   let relatoriosSizeBytes = 0;
+  const htmlFilesList: { filename: string; size_bytes: number; modified_at: string }[] = [];
+  const htmlLowerMap = new Map<string, string>();
+
   if (fs.existsSync(RELATORIOS_DIR)) {
     const rFiles = fs
       .readdirSync(RELATORIOS_DIR)
@@ -2108,17 +2338,79 @@ app.get('/api/admin/db/status', (req, res) => {
     relatoriosHtmlCount = rFiles.length;
     for (const f of rFiles) {
       try {
-        relatoriosSizeBytes += fs.statSync(path.join(RELATORIOS_DIR, f)).size;
+        const st = fs.statSync(path.join(RELATORIOS_DIR, f));
+        relatoriosSizeBytes += st.size;
+        htmlFilesList.push({
+          filename: f,
+          size_bytes: st.size,
+          modified_at: st.mtime.toISOString().replace('T', ' ').slice(0, 19),
+        });
+        htmlLowerMap.set(f.toLowerCase(), f);
       } catch {
         // ignore
       }
     }
   }
 
+  // Compute Migration Diagnostics (matching between discos_usb and relatorios/)
+  const allDiscosDiag = db
+    .prepare('SELECT id, id_disco, arquivo, ticket_num, relatorio_path FROM discos_usb ORDER BY id DESC')
+    .all() as {
+    id: number;
+    id_disco: string;
+    arquivo: string;
+    ticket_num: string;
+    relatorio_path: string | null;
+  }[];
+
+  let linkedOkCount = 0;
+  const missingReports: {
+    id: number;
+    id_disco: string;
+    arquivo: string;
+    ticket_num: string;
+    relatorio_path: string;
+  }[] = [];
+  const disksWithoutReport: {
+    id: number;
+    id_disco: string;
+    arquivo: string;
+    ticket_num: string;
+  }[] = [];
+  const referencedLowerSet = new Set<string>();
+
+  for (const d of allDiscosDiag) {
+    const norm = normalizeRelatorioFilename(d.relatorio_path);
+    if (norm) {
+      const lower = norm.toLowerCase();
+      referencedLowerSet.add(lower);
+      if (htmlLowerMap.has(lower)) {
+        linkedOkCount++;
+      } else {
+        missingReports.push({
+          id: d.id,
+          id_disco: d.id_disco,
+          arquivo: d.arquivo,
+          ticket_num: d.ticket_num,
+          relatorio_path: norm,
+        });
+      }
+    } else {
+      disksWithoutReport.push({
+        id: d.id,
+        id_disco: d.id_disco,
+        arquivo: d.arquivo,
+        ticket_num: d.ticket_num,
+      });
+    }
+  }
+
+  const unlinkedReports = htmlFilesList.filter((f) => !referencedLowerSet.has(f.filename.toLowerCase()));
+
   const backupsList = fs.existsSync(BACKUPS_DIR)
     ? fs
         .readdirSync(BACKUPS_DIR)
-        .filter((f) => f.endsWith('.db') || f.endsWith('.json'))
+        .filter((f) => (f.endsWith('.db') || f.endsWith('.json')) && !f.startsWith('.tmp_'))
         .map((filename) => {
           const st = fs.statSync(path.join(BACKUPS_DIR, filename));
           const isJson = filename.endsWith('.json');
@@ -2150,6 +2442,12 @@ app.get('/api/admin/db/status', (req, res) => {
       usuarios: usuariosCount,
       relatorios_html: relatoriosHtmlCount,
       relatorios_size_bytes: relatoriosSizeBytes,
+    },
+    migration_diagnostics: {
+      linked_ok_count: linkedOkCount,
+      missing_reports: missingReports,
+      unlinked_reports: unlinkedReports,
+      disks_without_report: disksWithoutReport,
     },
     backups: backupsList,
   });
@@ -2333,6 +2631,264 @@ app.post('/api/admin/db/restore-upload', uploadMemory.single('file'), (req, res)
       }
     }
     res.status(500).json({ error: `Erro ao restaurar base de dados: ${e?.message || e}` });
+  }
+});
+
+// 8b. Chunked Upload & Restore / Merge for large SQLite (.db/.sqlite) or Full JSON (.json) files
+app.post('/api/admin/db/restore-chunk', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const { uploadId, chunkIndex, totalChunks, originalName, mode, chunkBase64 } = req.body;
+    if (!uploadId || typeof chunkIndex !== 'number' || typeof totalChunks !== 'number' || !chunkBase64) {
+      res.status(400).json({ error: 'Parâmetros de upload incompletos.' });
+      return;
+    }
+
+    const origLower = String(originalName || '').toLowerCase();
+    const isJson = origLower.endsWith('.json');
+    const isSqlite = origLower.endsWith('.db') || origLower.endsWith('.sqlite') || origLower.endsWith('.sqlite3');
+
+    if (!isJson && !isSqlite) {
+      res.status(400).json({
+        error: 'Formato inválido. Apenas são suportados ficheiros SQLite (.db, .sqlite) ou Backups Completos (.json).',
+      });
+      return;
+    }
+
+    const safeUploadId = sanitizeFilename(String(uploadId));
+    const tempRestorePath = path.join(BACKUPS_DIR, `.tmp_restore_${safeUploadId}`);
+
+    const buffer = Buffer.from(chunkBase64, 'base64');
+    if (chunkIndex === 0 && fs.existsSync(tempRestorePath)) {
+      fs.unlinkSync(tempRestorePath);
+    }
+    fs.appendFileSync(tempRestorePath, buffer);
+
+    if (chunkIndex + 1 < totalChunks) {
+      res.json({ done: false, chunkIndex });
+      return;
+    }
+
+    // Final chunk received -> execute restore or migration merge
+    try {
+      const safetyFile = createPreRestoreSafetyBackup();
+      const restoreMode = mode === 'merge' ? 'merge' : 'replace';
+
+      if (isJson) {
+        const raw = fs.readFileSync(tempRestorePath, 'utf-8');
+        const payload = JSON.parse(raw);
+        const stats = restoreFromFullJsonPayload(payload);
+        if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath);
+        res.json({
+          done: true,
+          message: `Restauro concluído com sucesso a partir de "${originalName}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados, ${stats.relatoriosRestaurados} relatórios HTML)! Salvaguarda prévia criada: ${safetyFile}.`,
+        });
+      } else {
+        const fd = fs.openSync(tempRestorePath, 'r');
+        const headerBuf = Buffer.alloc(16);
+        fs.readSync(fd, headerBuf, 0, 16, 0);
+        fs.closeSync(fd);
+        if (!headerBuf.subarray(0, 15).toString('utf-8').startsWith('SQLite format 3')) {
+          if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath);
+          res.status(400).json({ error: 'O ficheiro selecionado não é uma base de dados SQLite 3 válida.' });
+          return;
+        }
+
+        const stats = restoreFromSqliteFile(tempRestorePath, restoreMode);
+        if (fs.existsSync(tempRestorePath)) fs.unlinkSync(tempRestorePath);
+
+        if (restoreMode === 'merge') {
+          res.json({
+            done: true,
+            message: `Migração concluída a partir de "${originalName}": ${stats.discosNovos} novos discos importados, ${stats.discosAtualizados} atualizados (${stats.discos} discos no total e ${stats.ficheiros} ficheiros indexados)! Salvaguarda prévia: ${safetyFile}.`,
+          });
+        } else {
+          res.json({
+            done: true,
+            message: `Base de dados SQLite migrada/restaurada com sucesso a partir de "${originalName}" (${stats.discos} discos, ${stats.ficheiros} ficheiros indexados)! Salvaguarda prévia: ${safetyFile}.`,
+          });
+        }
+      }
+    } catch (innerErr: any) {
+      if (fs.existsSync(tempRestorePath)) {
+        try {
+          fs.unlinkSync(tempRestorePath);
+        } catch {
+          // ignore
+        }
+      }
+      res.status(500).json({ error: `Erro ao processar base de dados: ${innerErr?.message || innerErr}` });
+    }
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao carregar bloco da base de dados: ${e?.message || e}` });
+  }
+});
+
+// 8c. Chunked Upload for Migrating Old Snap2HTML Reports (preserves original filename + auto-links + indexes)
+app.post('/api/admin/db/migrate-report-chunk', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const { uploadId, chunkIndex, totalChunks, originalName, chunkBase64 } = req.body;
+    if (!uploadId || typeof chunkIndex !== 'number' || typeof totalChunks !== 'number' || !chunkBase64) {
+      res.status(400).json({ error: 'Parâmetros de upload incompletos.' });
+      return;
+    }
+
+    const cleanOrigName = path.basename(String(originalName || '').replace(/\\/g, '/')).trim();
+    const lowerName = cleanOrigName.toLowerCase();
+    if (!lowerName.endsWith('.html') && !lowerName.endsWith('.htm')) {
+      res.status(400).json({ error: 'Apenas são permitidos relatórios Snap2HTML (.html ou .htm).' });
+      return;
+    }
+
+    const safeUploadId = sanitizeFilename(String(uploadId));
+    const tempPath = path.join(RELATORIOS_DIR, `.tmp_mig_${safeUploadId}`);
+
+    const buffer = Buffer.from(chunkBase64, 'base64');
+    if (chunkIndex === 0 && fs.existsSync(tempPath)) {
+      fs.unlinkSync(tempPath);
+    }
+    fs.appendFileSync(tempPath, buffer);
+
+    if (chunkIndex + 1 < totalChunks) {
+      res.json({ done: false, chunkIndex });
+      return;
+    }
+
+    // Final chunk: save with exact original filename in ./relatorios/
+    const finalPath = path.join(RELATORIOS_DIR, cleanOrigName);
+    if (fs.existsSync(finalPath)) {
+      fs.unlinkSync(finalPath);
+    }
+    fs.renameSync(tempPath, finalPath);
+
+    // Try matching this report to a disk in discos_usb:
+    // 1. Exact relatorio_path match (case-insensitive)
+    let matchedDiscos = db
+      .prepare('SELECT id, id_disco, total_imagens FROM discos_usb WHERE LOWER(relatorio_path) = LOWER(?)')
+      .all(cleanOrigName) as { id: number; id_disco: string; total_imagens: number }[];
+
+    // 2. If no disk had relatorio_path == cleanOrigName, try matching by id_disco or ticket_num stem/prefix
+    if (matchedDiscos.length === 0) {
+      const ext = path.extname(lowerName);
+      const stem = path.basename(lowerName, ext);
+      const candidateDiscos = db
+        .prepare('SELECT id, id_disco, ticket_num, relatorio_path, total_imagens FROM discos_usb ORDER BY id ASC')
+        .all() as {
+        id: number;
+        id_disco: string;
+        ticket_num: string;
+        relatorio_path: string | null;
+        total_imagens: number;
+      }[];
+
+      for (const d of candidateDiscos) {
+        // Only auto-assign if disk has no report or its report file does not exist
+        const existingRel = normalizeRelatorioFilename(d.relatorio_path);
+        const hasValidFile = existingRel ? fs.existsSync(path.join(RELATORIOS_DIR, existingRel)) : false;
+        if (hasValidFile) continue;
+
+        const idRaw = (d.id_disco || '').trim().toLowerCase();
+        const idSafe = sanitizeFilename(d.id_disco || '').toLowerCase();
+        const tickRaw = (d.ticket_num || '').trim().toLowerCase();
+        const tickSafe = sanitizeFilename(d.ticket_num || '').toLowerCase();
+
+        const matchesId =
+          (idRaw && (stem === idRaw || stem.startsWith(`${idRaw}_`))) ||
+          (idSafe && (stem === idSafe || stem.startsWith(`${idSafe}_`)));
+        const matchesTicket =
+          !matchesId &&
+          ((tickRaw && (stem === tickRaw || stem.startsWith(`${tickRaw}_`))) ||
+            (tickSafe && (stem === tickSafe || stem.startsWith(`${tickSafe}_`))));
+
+        if (matchesId || matchesTicket) {
+          db.prepare('UPDATE discos_usb SET relatorio_path = ? WHERE id = ?').run(cleanOrigName, d.id);
+          matchedDiscos.push({ id: d.id, id_disco: d.id_disco, total_imagens: d.total_imagens });
+          break;
+        }
+      }
+    }
+
+    let indexedTif = 0;
+    let indexedTotal = 0;
+    for (const md of matchedDiscos) {
+      // Ensure exact case in relatorio_path
+      db.prepare('UPDATE discos_usb SET relatorio_path = ? WHERE id = ?').run(cleanOrigName, md.id);
+      const resIdx = indexarRelatorio(md.id, finalPath);
+      indexedTif += resIdx.tifCount;
+      indexedTotal += resIdx.total;
+      if ((!md.total_imagens || md.total_imagens === 0) && resIdx.tifCount > 0) {
+        db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(resIdx.tifCount, md.id);
+      }
+    }
+
+    res.json({
+      done: true,
+      filename: cleanOrigName,
+      linked_discos: matchedDiscos.map((m) => m.id_disco),
+      indexed_tif: indexedTif,
+      indexed_total: indexedTotal,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao migrar relatório Snap2HTML: ${e?.message || e}` });
+  }
+});
+
+// 8d. Auto-link unlinked reports in ./relatorios/ and reindex all linked reports
+app.post('/api/admin/db/auto-link-reports', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  try {
+    const forceAll = Boolean(req.body?.force_reindex_all);
+    const stats = autoLinkAndIndexReports(forceAll);
+    res.json({
+      message: `Sincronização e indexação concluídas: ${stats.newlyLinked} relatórios associados automaticamente, ${stats.indexedDisks} relatórios indexados (${stats.totalTifIndexed} matrizes .TIF / ${stats.totalFilesIndexed} ficheiros)!`,
+      ...stats,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao associar e indexar relatórios: ${e?.message || e}` });
+  }
+});
+
+// 8e. Manually link an existing report in ./relatorios/ to a specific disk record and index it
+app.post('/api/admin/db/link-report', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const discoId = Number(req.body?.disco_id || 0);
+  const filename = normalizeRelatorioFilename(req.body?.filename);
+
+  if (!discoId || !filename) {
+    res.status(400).json({ error: 'Selecione um disco e um ficheiro de relatório válido.' });
+    return;
+  }
+
+  const fullPath = path.join(RELATORIOS_DIR, filename);
+  if (!fs.existsSync(fullPath)) {
+    res.status(404).json({ error: `O ficheiro "${filename}" não existe na pasta relatorios/.` });
+    return;
+  }
+
+  const disco = db.prepare('SELECT id, id_disco, total_imagens FROM discos_usb WHERE id = ?').get(discoId) as
+    | { id: number; id_disco: string; total_imagens: number }
+    | undefined;
+  if (!disco) {
+    res.status(404).json({ error: 'Registo de disco não encontrado.' });
+    return;
+  }
+
+  try {
+    db.prepare('UPDATE discos_usb SET relatorio_path = ? WHERE id = ?').run(filename, disco.id);
+    const resIdx = indexarRelatorio(disco.id, fullPath);
+    if ((!disco.total_imagens || disco.total_imagens === 0) && resIdx.tifCount > 0) {
+      db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(resIdx.tifCount, disco.id);
+    }
+    res.json({
+      message: `Relatório "${filename}" associado ao disco "${disco.id_disco}" e indexado com sucesso (${resIdx.tifCount} ficheiros .TIF)!`,
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: `Erro ao associar relatório: ${e?.message || e}` });
   }
 });
 

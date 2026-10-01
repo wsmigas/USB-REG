@@ -103,6 +103,27 @@ export interface DbAdminStatus {
     relatorios_html: number;
     relatorios_size_bytes: number;
   };
+  migration_diagnostics?: {
+    linked_ok_count: number;
+    missing_reports: {
+      id: number;
+      id_disco: string;
+      arquivo: string;
+      ticket_num: string;
+      relatorio_path: string;
+    }[];
+    unlinked_reports: {
+      filename: string;
+      size_bytes: number;
+      modified_at: string;
+    }[];
+    disks_without_report: {
+      id: number;
+      id_disco: string;
+      arquivo: string;
+      ticket_num: string;
+    }[];
+  };
   backups: DbBackupInfo[];
 }
 

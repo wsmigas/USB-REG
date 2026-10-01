@@ -183,10 +183,24 @@ export default function App() {
   const [creatingBackupMode, setCreatingBackupMode] = useState<'sqlite' | 'full_json' | null>(null);
   const [optimizingDb, setOptimizingDb] = useState(false);
   const [restoreUploadFile, setRestoreUploadFile] = useState<File | null>(null);
+  const [restoreUploadMode, setRestoreUploadMode] = useState<'replace' | 'merge'>('replace');
   const [restoringDb, setRestoringDb] = useState(false);
+  const [restoreProgressText, setRestoreProgressText] = useState<string | null>(null);
   const [confirmUploadRestore, setConfirmUploadRestore] = useState(false);
   const [confirmRestoreFilename, setConfirmRestoreFilename] = useState<string | null>(null);
   const [confirmDeleteBackupFilename, setConfirmDeleteBackupFilename] = useState<string | null>(null);
+
+  // Batch Report Migration state (Admin Only)
+  const [migratingReports, setMigratingReports] = useState(false);
+  const [migrationReportsProgress, setMigrationReportsProgress] = useState<{
+    current: number;
+    total: number;
+    filename: string;
+    pct: number;
+  } | null>(null);
+  const [autoLinkingReports, setAutoLinkingReports] = useState(false);
+  const [manualLinkSelection, setManualLinkSelection] = useState<Record<string, string>>({});
+  const [linkingReportFilename, setLinkingReportFilename] = useState<string | null>(null);
 
   // Fetch main inventory
   const fetchDiscos = useCallback(async () => {
@@ -701,30 +715,223 @@ export default function App() {
     e.preventDefault();
     if (!currentUser?.is_admin || !restoreUploadFile) return;
     setRestoringDb(true);
-    try {
-      const fd = new FormData();
-      fd.append('file', restoreUploadFile);
-      fd.append('admin_user_id', String(currentUser.id));
+    setRestoreProgressText('A preparar ficheiro...');
 
-      const res = await fetch(`/api/admin/db/restore-upload?admin_user_id=${currentUser.id}`, {
+    try {
+      const chunkSize = 2 * 1024 * 1024; // 2 MB per chunk to bypass proxy payload limits
+      const totalChunks = Math.max(1, Math.ceil(restoreUploadFile.size / chunkSize));
+      const uploadId = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+      let finalMessage = '';
+      for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+        const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+        setRestoreProgressText(
+          totalChunks > 1
+            ? `A transferir "${restoreUploadFile.name}" (${pct}% - bloco ${chunkIndex + 1}/${totalChunks})...`
+            : `A transferir e processar "${restoreUploadFile.name}"...`
+        );
+
+        const start = chunkIndex * chunkSize;
+        const end = Math.min(start + chunkSize, restoreUploadFile.size);
+        const slice = restoreUploadFile.slice(start, end);
+        const buffer = await slice.arrayBuffer();
+        const chunkBase64 = arrayBufferToBase64(buffer);
+
+        const res = await fetch(`/api/admin/db/restore-chunk?admin_user_id=${currentUser.id}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-user-id': String(currentUser.id),
+          },
+          body: JSON.stringify({
+            admin_user_id: currentUser.id,
+            uploadId,
+            chunkIndex,
+            totalChunks,
+            originalName: restoreUploadFile.name,
+            mode: restoreUploadMode,
+            chunkBase64,
+          }),
+        });
+
+        const data = await safeParseJson(res);
+        if (!res.ok) {
+          showFlash(data.error || 'Erro ao restaurar/migrar ficheiro de base de dados.', 'danger');
+          return;
+        }
+        if (data.done) {
+          finalMessage = data.message || 'Base de dados restaurada com sucesso!';
+        }
+      }
+
+      showFlash(finalMessage, 'success');
+      setRestoreUploadFile(null);
+      setConfirmUploadRestore(false);
+      fetchDbAdminStatus();
+      fetchDiscos();
+    } catch {
+      showFlash('Erro ao comunicar com o servidor ao enviar ficheiro de base de dados.', 'danger');
+    } finally {
+      setRestoringDb(false);
+      setRestoreProgressText(null);
+    }
+  };
+
+  const handleBatchMigrateReports = async (fileList: FileList | null) => {
+    if (!currentUser?.is_admin || !fileList || fileList.length === 0) return;
+
+    const htmlFiles = Array.from(fileList).filter((f) => {
+      const lower = f.name.toLowerCase();
+      return (lower.endsWith('.html') || lower.endsWith('.htm')) && !f.name.startsWith('.');
+    });
+
+    if (htmlFiles.length === 0) {
+      showFlash('Nenhum ficheiro .html ou .htm encontrado na seleção.', 'warning');
+      return;
+    }
+
+    setMigratingReports(true);
+    let migratedCount = 0;
+    let linkedCount = 0;
+    let totalTifCount = 0;
+    let errorsCount = 0;
+
+    try {
+      const chunkSize = 2 * 1024 * 1024; // 2 MB per chunk
+
+      for (let i = 0; i < htmlFiles.length; i++) {
+        const file = htmlFiles[i];
+        const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
+        const uploadId = `${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`;
+
+        let fileSuccess = false;
+        for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex++) {
+          const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
+          setMigrationReportsProgress({
+            current: i + 1,
+            total: htmlFiles.length,
+            filename: file.name,
+            pct,
+          });
+
+          const start = chunkIndex * chunkSize;
+          const end = Math.min(start + chunkSize, file.size);
+          const buffer = await file.slice(start, end).arrayBuffer();
+          const chunkBase64 = arrayBufferToBase64(buffer);
+
+          const res = await fetch(`/api/admin/db/migrate-report-chunk?admin_user_id=${currentUser.id}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-admin-user-id': String(currentUser.id),
+            },
+            body: JSON.stringify({
+              admin_user_id: currentUser.id,
+              uploadId,
+              chunkIndex,
+              totalChunks,
+              originalName: file.name,
+              chunkBase64,
+            }),
+          });
+
+          const data = await safeParseJson(res);
+          if (!res.ok) {
+            errorsCount++;
+            break;
+          }
+          if (data.done) {
+            fileSuccess = true;
+            if (Array.isArray(data.linked_discos) && data.linked_discos.length > 0) {
+              linkedCount += data.linked_discos.length;
+            }
+            totalTifCount += Number(data.indexed_tif) || 0;
+          }
+        }
+
+        if (fileSuccess) {
+          migratedCount++;
+        }
+      }
+
+      showFlash(
+        `Migração de relatórios concluída: ${migratedCount}/${htmlFiles.length} ficheiros .HTML transferidos (${linkedCount} associados a discos, ${totalTifCount.toLocaleString(
+          'pt-PT'
+        )} matrizes .TIF indexadas)${errorsCount > 0 ? ` · ${errorsCount} com erro` : ''}!`,
+        errorsCount > 0 && migratedCount === 0 ? 'danger' : 'success'
+      );
+      fetchDbAdminStatus();
+      fetchDiscos();
+    } catch {
+      showFlash('Erro durante a migração em lote de relatórios Snap2HTML.', 'danger');
+    } finally {
+      setMigratingReports(false);
+      setMigrationReportsProgress(null);
+    }
+  };
+
+  const handleAutoLinkReports = async (forceReindexAll = true) => {
+    if (!currentUser?.is_admin) return;
+    setAutoLinkingReports(true);
+    try {
+      const res = await fetch('/api/admin/db/auto-link-reports', {
         method: 'POST',
-        headers: { 'x-admin-user-id': String(currentUser.id) },
-        body: fd,
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-user-id': String(currentUser.id),
+        },
+        body: JSON.stringify({
+          admin_user_id: currentUser.id,
+          force_reindex_all: forceReindexAll,
+        }),
       });
       const data = await safeParseJson(res);
       if (res.ok) {
         showFlash(data.message, 'success');
-        setRestoreUploadFile(null);
-        setConfirmUploadRestore(false);
         fetchDbAdminStatus();
         fetchDiscos();
       } else {
-        showFlash(data.error || 'Erro ao restaurar ficheiro de backup.', 'danger');
+        showFlash(data.error || 'Erro ao associar relatórios.', 'danger');
       }
     } catch {
-      showFlash('Erro ao comunicar com o servidor ao enviar ficheiro de restauro.', 'danger');
+      showFlash('Erro ao comunicar com o servidor.', 'danger');
     } finally {
-      setRestoringDb(false);
+      setAutoLinkingReports(false);
+    }
+  };
+
+  const handleManualLinkReport = async (filename: string) => {
+    const discoId = Number(manualLinkSelection[filename] || 0);
+    if (!currentUser?.is_admin || !discoId) {
+      showFlash('Selecione primeiro o registo de disco na lista.', 'warning');
+      return;
+    }
+    setLinkingReportFilename(filename);
+    try {
+      const res = await fetch('/api/admin/db/link-report', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-user-id': String(currentUser.id),
+        },
+        body: JSON.stringify({
+          admin_user_id: currentUser.id,
+          disco_id: discoId,
+          filename,
+        }),
+      });
+      const data = await safeParseJson(res);
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        fetchDbAdminStatus();
+        fetchDiscos();
+      } else {
+        showFlash(data.error || 'Erro ao associar relatório ao disco.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao comunicar com o servidor.', 'danger');
+    } finally {
+      setLinkingReportFilename(null);
     }
   };
 
@@ -2099,7 +2306,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Panel 2: Restaurar Base de Dados a partir de Ficheiro Externo */}
+              {/* Panel 2: Migrar Base Antiga / Restaurar a partir de Ficheiro Externo */}
               <div
                 className={`p-5 rounded-xl border space-y-4 ${
                   theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
@@ -2108,13 +2315,12 @@ export default function App() {
                 <div>
                   <h2 className="text-base font-bold flex items-center gap-2">
                     <RotateCcw className="w-4 h-4 text-amber-400" />
-                    2. Restaurar a partir de Ficheiro Externo
+                    2. Migrar Base Antiga (<span className="font-mono">gestao_discos.db</span>) ou Restaurar Backup
                   </h2>
                   <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                    Carregue um ficheiro SQLite (<span className="font-mono">.db</span>,{' '}
-                    <span className="font-mono">.sqlite</span>) ou um pacote de Backup Completo RIDIS (
-                    <span className="font-mono">.json</span>). Antes do restauro, é criada automaticamente uma cópia de
-                    salvaguarda do estado atual.
+                    Carregue o ficheiro <span className="font-mono">gestao_discos.db</span> da sua aplicação antiga (ou um
+                    backup <span className="font-mono">.db</span> / <span className="font-mono">.json</span>). O envio é
+                    feito em blocos seguros de 2 MB (suporta bases de dados de qualquer dimensão).
                   </p>
                 </div>
 
@@ -2135,6 +2341,68 @@ export default function App() {
                     />
                   </div>
 
+                  {restoreUploadFile && !restoreUploadFile.name.toLowerCase().endsWith('.json') && (
+                    <div
+                      className={`p-3 rounded-lg border text-xs space-y-2 ${
+                        theme === 'dark' ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+                      }`}
+                    >
+                      <div className="font-semibold text-slate-300">Modo de Migração SQLite:</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label
+                          className={`p-2.5 rounded-lg border flex items-start gap-2 cursor-pointer ${
+                            restoreUploadMode === 'replace'
+                              ? 'border-amber-500 bg-amber-500/10 text-amber-200'
+                              : 'border-slate-800 text-slate-400'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="restore_mode"
+                            checked={restoreUploadMode === 'replace'}
+                            onChange={() => setRestoreUploadMode('replace')}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <div className="font-semibold">Substituir Tudo (Integral)</div>
+                            <div className="text-[11px] opacity-80">
+                              Substitui os registos atuais pelos registos da base antiga.
+                            </div>
+                          </div>
+                        </label>
+
+                        <label
+                          className={`p-2.5 rounded-lg border flex items-start gap-2 cursor-pointer ${
+                            restoreUploadMode === 'merge'
+                              ? 'border-blue-500 bg-blue-500/10 text-blue-200'
+                              : 'border-slate-800 text-slate-400'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="restore_mode"
+                            checked={restoreUploadMode === 'merge'}
+                            onChange={() => setRestoreUploadMode('merge')}
+                            className="mt-0.5"
+                          />
+                          <div>
+                            <div className="font-semibold">Fundir / Adicionar Registos</div>
+                            <div className="text-[11px] opacity-80">
+                              Mantém os registos atuais e importa/atualiza os da base antiga.
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {restoreProgressText && (
+                    <div className="p-2.5 rounded-lg bg-blue-950/50 border border-blue-800 text-blue-200 text-xs flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                      <span>{restoreProgressText}</span>
+                    </div>
+                  )}
+
                   {restoreUploadFile && !confirmUploadRestore && (
                     <div className="flex justify-end">
                       <button
@@ -2143,7 +2411,8 @@ export default function App() {
                         className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                        Restaurar Ficheiro &quot;{restoreUploadFile.name}&quot;
+                        {restoreUploadMode === 'merge' ? 'Migrar e Fundir' : 'Restaurar / Migrar'} &quot;
+                        {restoreUploadFile.name}&quot;
                       </button>
                     </div>
                   )}
@@ -2151,8 +2420,9 @@ export default function App() {
                   {restoreUploadFile && confirmUploadRestore && (
                     <div className="p-3 rounded-lg border border-amber-700/80 bg-amber-950/40 flex flex-wrap items-center justify-between gap-3 text-xs">
                       <span className="text-amber-200 font-medium">
-                        Confirmar a substituição dos dados atuais pelo ficheiro{' '}
-                        <strong className="font-mono">{restoreUploadFile.name}</strong>?
+                        {restoreUploadMode === 'merge'
+                          ? `Confirmar a importação/fusão dos registos de "${restoreUploadFile.name}"?`
+                          : `Confirmar a substituição dos dados atuais pelo ficheiro "${restoreUploadFile.name}"?`}
                       </span>
                       <div className="flex items-center gap-2">
                         <button
@@ -2160,7 +2430,7 @@ export default function App() {
                           disabled={restoringDb}
                           className="px-3.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-semibold cursor-pointer"
                         >
-                          {restoringDb ? 'A Restaurar...' : 'Confirmar Restauro'}
+                          {restoringDb ? 'A Processar...' : 'Confirmar'}
                         </button>
                         <button
                           type="button"
@@ -2174,6 +2444,292 @@ export default function App() {
                   )}
                 </form>
               </div>
+            </div>
+
+            {/* Panel 3: Migração em Lote de Relatórios Snap2HTML (relatorios/*.html) da Base Antiga */}
+            <div
+              className={`p-5 rounded-xl border space-y-5 ${
+                theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-base font-bold flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-[#6ea8fe]" />
+                    3. Migração da Pasta de Relatórios Antiga (<span className="font-mono">relatorios/*.html</span>)
+                  </h2>
+                  <p className={`text-xs mt-1 max-w-3xl ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                    Depois de migrar a base de dados (<span className="font-mono">gestao_discos.db</span> ou{' '}
+                    <span className="font-mono">.csv</span>), carregue aqui todos os relatórios Snap2HTML da pasta{' '}
+                    <span className="font-mono">relatorios/</span> antiga de uma só vez. O sistema preserva o nome
+                    original de cada ficheiro, liga-o automaticamente ao respetivo disco e indexa todas as matrizes{' '}
+                    <span className="font-mono">.TIF</span>.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Select multiple .html files */}
+                  <label
+                    className={`px-3.5 py-2 rounded-lg bg-[#0d6efd] hover:bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      migratingReports ? 'opacity-50 pointer-events-none' : ''
+                    }`}
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    Selecionar Ficheiros .HTML (Lote)
+                    <input
+                      type="file"
+                      accept=".html,.htm"
+                      multiple
+                      disabled={migratingReports}
+                      onChange={(e) => {
+                        handleBatchMigrateReports(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+
+                  {/* Select entire relatorios/ directory */}
+                  <label
+                    className={`px-3.5 py-2 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      migratingReports ? 'opacity-50 pointer-events-none' : ''
+                    } ${
+                      theme === 'dark'
+                        ? 'border-blue-500/50 bg-blue-950/30 hover:bg-blue-950/60 text-blue-300'
+                        : 'border-blue-300 bg-blue-50 hover:bg-blue-100 text-blue-700'
+                    }`}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    Selecionar Pasta relatorios/ Inteira
+                    <input
+                      type="file"
+                      multiple
+                      disabled={migratingReports}
+                      {...({ webkitdirectory: '', directory: '' } as any)}
+                      onChange={(e) => {
+                        handleBatchMigrateReports(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => handleAutoLinkReports(true)}
+                    disabled={autoLinkingReports || migratingReports}
+                    className={`px-3.5 py-2 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                      theme === 'dark'
+                        ? 'border-slate-700 bg-slate-950 hover:bg-slate-800 text-slate-200'
+                        : 'border-slate-300 bg-slate-50 hover:bg-slate-100 text-slate-700'
+                    }`}
+                    title="Procura correspondências automáticas entre os ficheiros em relatorios/ e os discos registados e reindexa todos os ficheiros .TIF"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${autoLinkingReports ? 'animate-spin' : ''}`} />
+                    {autoLinkingReports ? 'A Associar e Indexar...' : 'Associar & Reindexar Tudo'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Progress bar when batch migrating HTML files */}
+              {migrationReportsProgress && (
+                <div className="p-4 rounded-xl bg-blue-950/40 border border-blue-800/80 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-blue-200">
+                    <span className="font-semibold flex items-center gap-2">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />A migrar relatório{' '}
+                      {migrationReportsProgress.current} de {migrationReportsProgress.total}:{' '}
+                      <span className="font-mono text-white">{migrationReportsProgress.filename}</span>
+                    </span>
+                    <span className="font-mono font-bold">
+                      {Math.round(
+                        (((migrationReportsProgress.current - 1 + migrationReportsProgress.pct / 100) /
+                          migrationReportsProgress.total) *
+                          100)
+                      )}
+                      %
+                    </span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden">
+                    <div
+                      className="h-full bg-[#0d6efd] transition-all duration-200"
+                      style={{
+                        width: `${Math.round(
+                          (((migrationReportsProgress.current - 1 + migrationReportsProgress.pct / 100) /
+                            migrationReportsProgress.total) *
+                            100)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Migration Diagnostics Summary */}
+              {dbAdminStatus?.migration_diagnostics && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Box 1: Linked & Ready */}
+                  <div
+                    className={`p-3.5 rounded-lg border ${
+                      theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="text-xs text-slate-400">Relatórios Associados e Prontos</div>
+                    <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">
+                      {dbAdminStatus.migration_diagnostics.linked_ok_count} discos com relatório OK
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      Ficheiro <span className="font-mono">.html</span> presente em{' '}
+                      <span className="font-mono">relatorios/</span>
+                    </div>
+                  </div>
+
+                  {/* Box 2: Missing HTML files referenced by DB */}
+                  <div
+                    className={`p-3.5 rounded-lg border ${
+                      dbAdminStatus.migration_diagnostics.missing_reports.length > 0
+                        ? 'bg-amber-950/25 border-amber-700/60'
+                        : theme === 'dark'
+                        ? 'bg-slate-950/60 border-slate-800'
+                        : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="text-xs text-slate-400">Relatórios Aguardando Upload (.html em falta)</div>
+                    <div
+                      className={`text-lg font-bold font-mono mt-0.5 ${
+                        dbAdminStatus.migration_diagnostics.missing_reports.length > 0
+                          ? 'text-amber-400'
+                          : 'text-slate-300'
+                      }`}
+                    >
+                      {dbAdminStatus.migration_diagnostics.missing_reports.length} ficheiros em falta
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {dbAdminStatus.migration_diagnostics.missing_reports.length > 0
+                        ? 'Carregue a pasta relatorios/ antiga acima para completar'
+                        : 'Todos os relatórios referenciados na BD estão presentes'}
+                    </div>
+                  </div>
+
+                  {/* Box 3: Unlinked HTML files in relatorios/ */}
+                  <div
+                    className={`p-3.5 rounded-lg border ${
+                      dbAdminStatus.migration_diagnostics.unlinked_reports.length > 0
+                        ? 'bg-blue-950/25 border-blue-700/60'
+                        : theme === 'dark'
+                        ? 'bg-slate-950/60 border-slate-800'
+                        : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="text-xs text-slate-400">Ficheiros .HTML na Pasta Sem Disco Associado</div>
+                    <div
+                      className={`text-lg font-bold font-mono mt-0.5 ${
+                        dbAdminStatus.migration_diagnostics.unlinked_reports.length > 0
+                          ? 'text-blue-400'
+                          : 'text-slate-300'
+                      }`}
+                    >
+                      {dbAdminStatus.migration_diagnostics.unlinked_reports.length} ficheiros soltos
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {dbAdminStatus.migration_diagnostics.disks_without_report.length} discos registados sem relatório
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Detail List 1: Missing Reports (Referenced in DB, waiting for HTML upload) */}
+              {dbAdminStatus?.migration_diagnostics &&
+                dbAdminStatus.migration_diagnostics.missing_reports.length > 0 && (
+                  <div className="p-4 rounded-xl border border-amber-700/60 bg-amber-950/20 space-y-2">
+                    <div className="text-xs font-bold text-amber-300">
+                      Registos que já têm relatório definido na base de dados mas cujo ficheiro .HTML ainda não foi
+                      carregado ({dbAdminStatus.migration_diagnostics.missing_reports.length}):
+                    </div>
+                    <p className="text-[11px] text-amber-200/80">
+                      Basta usar o botão <strong>&quot;Selecionar Pasta relatorios/ Inteira&quot;</strong> ou{' '}
+                      <strong>&quot;Selecionar Ficheiros .HTML (Lote)&quot;</strong> acima e escolher estes ficheiros — a
+                      ligação fica imediatamente ativa:
+                    </p>
+                    <div className="max-h-44 overflow-y-auto divide-y divide-amber-800/30 text-xs pt-1">
+                      {dbAdminStatus.migration_diagnostics.missing_reports.map((mr) => (
+                        <div key={mr.id} className="py-1.5 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="font-bold text-white">{mr.id_disco}</span>
+                            <span className="text-slate-400 ml-2">
+                              ({mr.arquivo} · Ticket: {mr.ticket_num || '-'})
+                            </span>
+                          </div>
+                          <span className="font-mono text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded border border-amber-700/50">
+                            Falta ficheiro: {mr.relatorio_path}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Detail List 2: Unlinked HTML files in relatorios/ (Allow manual 1-click association to a disk) */}
+              {dbAdminStatus?.migration_diagnostics &&
+                dbAdminStatus.migration_diagnostics.unlinked_reports.length > 0 && (
+                  <div
+                    className={`p-4 rounded-xl border space-y-3 ${
+                      theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                    }`}
+                  >
+                    <div className="text-xs font-bold text-blue-400">
+                      Ficheiros .HTML na pasta <span className="font-mono">relatorios/</span> sem disco atribuído (
+                      {dbAdminStatus.migration_diagnostics.unlinked_reports.length}):
+                    </div>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-800 text-xs">
+                      {dbAdminStatus.migration_diagnostics.unlinked_reports.map((ur) => (
+                        <div key={ur.filename} className="py-2 flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                            <a
+                              href={`/relatorios/${encodeURIComponent(ur.filename)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-mono font-semibold text-blue-400 hover:underline"
+                            >
+                              {ur.filename}
+                            </a>
+                            <span className="text-slate-500 font-mono">({formatBytes(ur.size_bytes)})</span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={manualLinkSelection[ur.filename] || ''}
+                              onChange={(e) =>
+                                setManualLinkSelection((prev) => ({ ...prev, [ur.filename]: e.target.value }))
+                              }
+                              className={`px-2.5 py-1 rounded border text-xs ${
+                                theme === 'dark'
+                                  ? 'bg-slate-900 border-slate-700 text-slate-200'
+                                  : 'bg-white border-slate-300 text-slate-800'
+                              }`}
+                            >
+                              <option value="">Associar ao disco...</option>
+                              {discos.map((d) => (
+                                <option key={d.id} value={d.id}>
+                                  {d.id_disco} ({d.arquivo} · {d.ticket_num})
+                                  {d.relatorio_path ? ' [Já tem relatório]' : ''}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              disabled={!manualLinkSelection[ur.filename] || linkingReportFilename === ur.filename}
+                              onClick={() => handleManualLinkReport(ur.filename)}
+                              className="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold cursor-pointer"
+                            >
+                              {linkingReportFilename === ur.filename ? 'A indexar...' : 'Associar & Indexar'}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
             </div>
 
             {/* Table of Saved Backups in ./backups/ */}
