@@ -202,6 +202,13 @@ export default function App() {
   const [manualLinkSelection, setManualLinkSelection] = useState<Record<string, string>>({});
   const [linkingReportFilename, setLinkingReportFilename] = useState<string | null>(null);
 
+  // GitHub System Auto-Update state (Admin Only)
+  const [gitRepoUrl, setGitRepoUrl] = useState('https://github.com/wsmigas/USB-REG.git');
+  const [gitUpdating, setGitUpdating] = useState(false);
+  const [gitRestartAfterUpdate, setGitRestartAfterUpdate] = useState(true);
+  const [gitUpdateLogs, setGitUpdateLogs] = useState<string[] | null>(null);
+  const [confirmGitUpdate, setConfirmGitUpdate] = useState(false);
+
   // Fetch main inventory
   const fetchDiscos = useCallback(async () => {
     setLoadingDiscos(true);
@@ -1088,6 +1095,45 @@ export default function App() {
       showFlash('Erro ao comunicar com o servidor.', 'danger');
     } finally {
       setOptimizingDb(false);
+    }
+  };
+
+  const handleUpdateFromGitHub = async () => {
+    if (!currentUser?.is_admin) return;
+    setGitUpdating(true);
+    setConfirmGitUpdate(false);
+    setGitUpdateLogs(['A iniciar atualização automática a partir do GitHub...']);
+    try {
+      const res = await fetch('/api/admin/system/update-github', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-user-id': String(currentUser.id),
+        },
+        body: JSON.stringify({
+          admin_user_id: currentUser.id,
+          repoUrl: gitRepoUrl.trim() || 'https://github.com/wsmigas/USB-REG.git',
+          restartServer: gitRestartAfterUpdate,
+        }),
+      });
+      const data = await safeParseJson(res);
+      if (Array.isArray(data.logs)) {
+        setGitUpdateLogs(data.logs);
+      }
+      if (res.ok) {
+        showFlash(data.message || 'Site atualizado com sucesso a partir do GitHub!', 'success');
+        if (gitRestartAfterUpdate) {
+          setTimeout(() => {
+            window.location.reload();
+          }, 2800);
+        }
+      } else {
+        showFlash(data.error || 'Erro ao atualizar a partir do GitHub.', 'danger');
+      }
+    } catch (e: any) {
+      showFlash(`Erro ao comunicar com o servidor durante a atualização: ${e?.message || e}`, 'danger');
+    } finally {
+      setGitUpdating(false);
     }
   };
 
@@ -2332,6 +2378,94 @@ export default function App() {
                   Últ. mod: {dbAdminStatus?.db_modified_at || '-'}
                 </div>
               </div>
+            </div>
+
+            {/* GitHub 1-Click Auto-Update Banner (https://github.com/wsmigas/USB-REG.git) */}
+            <div
+              className={`p-5 rounded-xl border space-y-3 ${
+                theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-sm font-bold flex items-center gap-2">
+                    <RefreshCw className={`w-4 h-4 text-blue-400 ${gitUpdating ? 'animate-spin' : ''}`} />
+                    Atualização Automática do Site via GitHub (Sem SSH)
+                  </h2>
+                  <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
+                    Sincroniza o código com o repositório GitHub e recompila a aplicação mantendo{' '}
+                    <span className="font-mono">gestao_discos.db</span>,{' '}
+                    <span className="font-mono">relatorios/</span> e{' '}
+                    <span className="font-mono">backups/</span> 100% intactos.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <input
+                    type="text"
+                    value={gitRepoUrl}
+                    onChange={(e) => setGitRepoUrl(e.target.value)}
+                    disabled={gitUpdating}
+                    className={`w-72 px-3 py-2 rounded-lg border text-xs font-mono ${
+                      theme === 'dark'
+                        ? 'bg-slate-950 border-slate-800 text-slate-200'
+                        : 'bg-slate-50 border-slate-300 text-slate-800'
+                    }`}
+                    placeholder="https://github.com/wsmigas/USB-REG.git"
+                  />
+
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={gitRestartAfterUpdate}
+                      onChange={(e) => setGitRestartAfterUpdate(e.target.checked)}
+                      disabled={gitUpdating}
+                    />
+                    <span>Reiniciar servidor após atualizar</span>
+                  </label>
+
+                  {!confirmGitUpdate ? (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmGitUpdate(true)}
+                      disabled={gitUpdating}
+                      className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${gitUpdating ? 'animate-spin' : ''}`} />
+                      {gitUpdating ? 'A Atualizar Site...' : 'Atualizar Site do GitHub'}
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleUpdateFromGitHub}
+                        disabled={gitUpdating}
+                        className="px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
+                      >
+                        Confirmar Atualização
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmGitUpdate(false)}
+                        disabled={gitUpdating}
+                        className="px-3 py-2 rounded-lg border border-slate-700 text-xs cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {gitUpdateLogs && gitUpdateLogs.length > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono text-slate-300 max-h-48 overflow-y-auto space-y-1">
+                  {gitUpdateLogs.map((line, idx) => (
+                    <div key={idx} className="whitespace-pre-wrap break-all">
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Two-Column Action Panels: Backup vs Restore */}

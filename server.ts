@@ -4,11 +4,12 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import zlib from 'zlib';
+import { execSync } from 'child_process';
 import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = Number(process.env.PORT) || 3005;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -2878,6 +2879,176 @@ app.post('/api/admin/db/optimize', (req, res) => {
   }
 });
 
+// 10. System Update via GitHub (https://github.com/wsmigas/USB-REG.git)
+app.post('/api/admin/system/update-github', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+
+  const rawRepo = String(req.body?.repoUrl || 'https://github.com/wsmigas/USB-REG.git').trim();
+  const restartServer = Boolean(req.body?.restartServer);
+
+  if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/.test(rawRepo)) {
+    res.status(400).json({
+      error: 'URL de repositório GitHub inválido. Exemplo esperado: https://github.com/wsmigas/USB-REG.git',
+    });
+    return;
+  }
+
+  const logs: string[] = [];
+  const runCmd = (cmd: string, label: string) => {
+    logs.push(`$ ${cmd}`);
+    const out = execSync(cmd, {
+      cwd: BASE_DIR,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 180000,
+    });
+    if (out && out.trim()) {
+      logs.push(out.trim());
+    } else {
+      logs.push(`[OK] ${label}`);
+    }
+    return out ? out.trim() : '';
+  };
+
+  const liveDbHardlink = `${DB_PATH}.live_preserve`;
+
+  try {
+    // 1. Flush SQLite WAL and protect live gestao_discos.db with an instant O(1) hardlink
+    try {
+      db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+      db.close();
+    } catch {
+      // ignore
+    }
+
+    if (fs.existsSync(DB_PATH)) {
+      try {
+        if (fs.existsSync(liveDbHardlink)) fs.unlinkSync(liveDbHardlink);
+        fs.linkSync(DB_PATH, liveDbHardlink);
+        logs.push('[OK] Base de dados local gestao_discos.db protegida antes da sincronização Git.');
+      } catch {
+        // ignore if hardlink not supported
+      }
+    }
+
+    // 2. Initialize Git if .git does not exist yet
+    const gitDir = path.join(BASE_DIR, '.git');
+    if (!fs.existsSync(gitDir)) {
+      runCmd('git init', 'Repositório Git inicializado');
+    }
+
+    // 3. Configure remote origin to https://github.com/wsmigas/USB-REG.git
+    try {
+      const remotes = execSync('git remote', { cwd: BASE_DIR, encoding: 'utf-8' }).split(/\r?\n/);
+      if (remotes.includes('origin')) {
+        runCmd(`git remote set-url origin "${rawRepo}"`, 'Remote origin atualizado');
+      } else {
+        runCmd(`git remote add origin "${rawRepo}"`, 'Remote origin adicionado');
+      }
+    } catch {
+      runCmd(`git remote add origin "${rawRepo}"`, 'Remote origin adicionado');
+    }
+
+    // 4. Fetch latest commits from GitHub
+    runCmd('git fetch origin', 'Transferência de atualizações do GitHub concluída');
+
+    // 5. Detect remote branch (main or master)
+    let targetBranch = 'main';
+    try {
+      const branchesOut = execSync('git branch -r', { cwd: BASE_DIR, encoding: 'utf-8' });
+      if (branchesOut.includes('origin/main')) {
+        targetBranch = 'main';
+      } else if (branchesOut.includes('origin/master')) {
+        targetBranch = 'master';
+      }
+    } catch {
+      targetBranch = 'main';
+    }
+
+    // 6. Reset tracked code files to origin/<branch>
+    runCmd(`git reset --hard origin/${targetBranch}`, `Código atualizado para origin/${targetBranch}`);
+
+    // 7. Restore live gestao_discos.db if git touched it, and reopen SQLite connection
+    if (fs.existsSync(liveDbHardlink)) {
+      try {
+        fs.renameSync(liveDbHardlink, DB_PATH);
+        logs.push('[OK] Base de dados local gestao_discos.db preservada intacta.');
+      } catch {
+        // ignore
+      }
+    }
+
+    db = new DatabaseSync(DB_PATH);
+    ensureDatabaseSchema(db);
+    invalidateIndexCountsCache();
+
+    // 8. Build frontend (npm run build)
+    try {
+      runCmd('npm run build', 'Frontend compilado (dist/)');
+    } catch {
+      logs.push('A instalar dependências atualizadas (npm install)...');
+      runCmd('npm install --include=dev', 'Dependências instaladas');
+      runCmd('npm run build', 'Frontend compilado (dist/)');
+    }
+
+    let latestCommit = '';
+    try {
+      latestCommit = execSync('git log -1 --pretty=format:"%h — %s (%cr)"', {
+        cwd: BASE_DIR,
+        encoding: 'utf-8',
+      }).trim();
+      logs.push(`Último commit ativo: ${latestCommit}`);
+    } catch {
+      // ignore
+    }
+
+    res.json({
+      success: true,
+      branch: targetBranch,
+      commit: latestCommit,
+      logs,
+      message: `Site atualizado com sucesso a partir de ${rawRepo} (${
+        latestCommit || targetBranch
+      })! A base de dados e os relatórios foram mantidos intactos.`,
+    });
+
+    if (restartServer) {
+      setTimeout(() => {
+        process.exit(0);
+      }, 1200);
+    }
+  } catch (e: any) {
+    // Ensure live DB is restored and reopened even if git fetch fails
+    if (fs.existsSync(liveDbHardlink)) {
+      try {
+        if (!fs.existsSync(DB_PATH)) {
+          fs.renameSync(liveDbHardlink, DB_PATH);
+        } else {
+          fs.unlinkSync(liveDbHardlink);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    try {
+      db = new DatabaseSync(DB_PATH);
+      ensureDatabaseSchema(db);
+    } catch {
+      // ignore
+    }
+
+    const stderrMsg = e?.stderr ? String(e.stderr).trim() : '';
+    const stdoutMsg = e?.stdout ? String(e.stdout).trim() : '';
+    if (stdoutMsg) logs.push(stdoutMsg);
+    if (stderrMsg) logs.push(stderrMsg);
+
+    res.status(500).json({
+      error: `Erro ao atualizar a partir do GitHub: ${stderrMsg || e?.message || e}`,
+      logs,
+    });
+  }
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
@@ -2896,6 +3067,13 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`RIDIS Server running on http://localhost:${PORT}`);
   });
+
+  if (PORT !== 3000) {
+    const previewServer = app.listen(3000, '0.0.0.0');
+    previewServer.on('error', () => {
+      // Ignore if port 3000 is occupied on an external host
+    });
+  }
 }
 
 startServer();
