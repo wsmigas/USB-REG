@@ -1871,7 +1871,7 @@ export default function App() {
                     }`}
                   >
                     {/* Top Row: 7 Columns */}
-                    <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-[1fr_2.4fr_1.8fr_1.2fr_auto_2.8fr_auto] gap-3 items-center text-xs">
+                    <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-[1fr_2.2fr_1.7fr_1.8fr_auto_2.6fr_auto] gap-3 items-center text-xs">
                       {/* 1. Arquivo e Remetente */}
                       <div className="min-w-0">
                         <div
@@ -1944,18 +1944,22 @@ export default function App() {
                         <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
                           {d.tamanho_disco || '-'} | {d.marca || '-'}
                         </div>
-                        <div className={`mt-0.5 truncate ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                          S/N:{' '}
+                        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1">
+                          <span className={`shrink-0 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                            S/N:
+                          </span>
                           {d.numero_serie ? (
                             <button
                               type="button"
                               onClick={() => handleCopy(d.numero_serie, `sn-${d.id}`)}
-                              className="hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
+                              className="font-mono hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer select-text text-left"
                               title="Clique para copiar o número de série"
                             >
-                              {d.numero_serie}
-                              {copiedKey === `sn-${d.id}` && (
-                                <Check className="w-3 h-3 text-emerald-400" />
+                              <span>{d.numero_serie}</span>
+                              {copiedKey === `sn-${d.id}` ? (
+                                <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                              ) : (
+                                <Copy className="w-2.5 h-2.5 opacity-40 hover:opacity-100 shrink-0" />
                               )}
                             </button>
                           ) : (
