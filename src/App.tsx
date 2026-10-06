@@ -1234,6 +1234,12 @@ export default function App() {
 
   const formatNumber = (n: number) => n.toLocaleString('pt-PT');
 
+  const getOtrsTicketUrl = (ticket: string) => {
+    if (!ticket) return '#';
+    const clean = String(ticket).replace(/^["']|["']$/g, '').trim();
+    return `http://suporte.tt.pt/otrs/index.pl?Action=AgentTicketSearch;Subaction=Search;Fulltext=${encodeURIComponent(clean)};CheckTicketNumberAndRedirect=1`;
+  };
+
   const formatDatePt = (dateStr: string) => {
     if (!dateStr) return '-';
     const s = String(dateStr).trim();
@@ -1889,17 +1895,16 @@ export default function App() {
                             Ticket de envio:{' '}
                           </span>
                           {d.ticket_num ? (
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(d.ticket_num, `ticket-${d.id}`)}
-                              title="Clique para copiar o número do ticket"
-                              className="font-bold hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
+                            <a
+                              href={getOtrsTicketUrl(d.ticket_num)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`Abrir ticket ${d.ticket_num} no OTRS (nova aba)`}
+                              className="font-bold text-[#6ea8fe] hover:underline inline-flex items-center gap-1 cursor-pointer"
                             >
                               {d.ticket_num}
-                              {copiedKey === `ticket-${d.id}` && (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              )}
-                            </button>
+                              <ExternalLink className="w-3 h-3 opacity-70" />
+                            </a>
                           ) : (
                             <span>-</span>
                           )}
@@ -1994,17 +1999,16 @@ export default function App() {
                             <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
                               Ticket de integração:{' '}
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(d.ticket_integracao, `integ-${d.id}`)}
-                              className="font-bold hover:text-blue-400 inline-flex items-center gap-1 cursor-pointer"
-                              title="Clique para copiar o ticket de integração"
+                            <a
+                              href={getOtrsTicketUrl(d.ticket_integracao)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-bold text-[#6ea8fe] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                              title={`Abrir ticket de integração ${d.ticket_integracao} no OTRS (nova aba)`}
                             >
                               {d.ticket_integracao}
-                              {copiedKey === `integ-${d.id}` && (
-                                <Check className="w-3 h-3 text-emerald-400" />
-                              )}
-                            </button>
+                              <ExternalLink className="w-3 h-3 opacity-70" />
+                            </a>
                           </div>
                         )}
                         <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
@@ -3571,8 +3575,22 @@ export default function App() {
                   Relatório Snap2HTML — {inspectModalDisco.id_disco}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  {inspectModalDisco.arquivo} · Ticket: {inspectModalDisco.ticket_num} · Localização:{' '}
-                  {inspectModalDisco.localizacao || '-'} · Ficheiro:{' '}
+                  {inspectModalDisco.arquivo} · Ticket:{' '}
+                  {inspectModalDisco.ticket_num ? (
+                    <a
+                      href={getOtrsTicketUrl(inspectModalDisco.ticket_num)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#6ea8fe] hover:underline font-mono inline-flex items-center gap-0.5"
+                      title={`Abrir ticket ${inspectModalDisco.ticket_num} no OTRS (nova aba)`}
+                    >
+                      {inspectModalDisco.ticket_num}
+                      <ExternalLink className="w-3 h-3 opacity-70" />
+                    </a>
+                  ) : (
+                    '-'
+                  )}{' '}
+                  · Localização: {inspectModalDisco.localizacao || '-'} · Ficheiro:{' '}
                   <span className="font-mono">relatorios/{inspectModalDisco.relatorio_path}</span>
                 </p>
               </div>
