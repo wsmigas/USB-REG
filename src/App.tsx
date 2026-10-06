@@ -1871,7 +1871,7 @@ export default function App() {
                     }`}
                   >
                     {/* Top Row: 7 Columns */}
-                    <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-[1.1fr_1.8fr_2.3fr_1.35fr_auto_2.4fr_auto] gap-3 items-center text-xs">
+                    <div className="px-4 py-3 grid grid-cols-1 lg:grid-cols-[1fr_2.4fr_1.8fr_1.2fr_auto_2.8fr_auto] gap-3 items-center text-xs">
                       {/* 1. Arquivo e Remetente */}
                       <div className="min-w-0">
                         <div
@@ -1890,9 +1890,9 @@ export default function App() {
                         <div className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
                           {formatDatePt(d.data_entrada)}
                         </div>
-                        <div className="mt-0.5 truncate">
-                          <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
-                            Ticket de envio:{' '}
+                        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-1.5">
+                          <span className={`shrink-0 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                            Ticket de envio:
                           </span>
                           {d.ticket_num ? (
                             <a
@@ -1900,10 +1900,10 @@ export default function App() {
                               target="_blank"
                               rel="noopener noreferrer"
                               title={`Abrir ticket ${d.ticket_num} no OTRS (nova aba)`}
-                              className="font-bold text-[#6ea8fe] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                              className="font-bold font-mono text-[#6ea8fe] hover:underline inline-flex items-center gap-1 cursor-pointer"
                             >
-                              {d.ticket_num}
-                              <ExternalLink className="w-3 h-3 opacity-70" />
+                              <span>{d.ticket_num}</span>
+                              <ExternalLink className="w-3 h-3 opacity-70 shrink-0" />
                             </a>
                           ) : (
                             <span>-</span>
@@ -1995,19 +1995,19 @@ export default function App() {
                       {/* 6. Ticket de Integração e Total de img */}
                       <div className="min-w-0">
                         {d.ticket_integracao && (
-                          <div className="truncate mb-0.5">
-                            <span className={theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}>
-                              Ticket de integração:{' '}
+                          <div className="mb-0.5 flex flex-wrap items-baseline gap-x-1.5">
+                            <span className={`shrink-0 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                              Ticket de integração:
                             </span>
                             <a
                               href={getOtrsTicketUrl(d.ticket_integracao)}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="font-bold text-[#6ea8fe] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                              className="font-bold font-mono text-[#6ea8fe] hover:underline inline-flex items-center gap-1 cursor-pointer"
                               title={`Abrir ticket de integração ${d.ticket_integracao} no OTRS (nova aba)`}
                             >
-                              {d.ticket_integracao}
-                              <ExternalLink className="w-3 h-3 opacity-70" />
+                              <span>{d.ticket_integracao}</span>
+                              <ExternalLink className="w-3 h-3 opacity-70 shrink-0" />
                             </a>
                           </div>
                         )}
