@@ -56,9 +56,9 @@ export default function App() {
     localStorage.setItem('ridis_theme', theme);
   }, [theme]);
 
-  const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutos
+  const INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
 
-  // Auth state with 10-minute session inactivity check
+  // Auth state with 5-minute session inactivity check
   const [currentUser, setCurrentUser] = useState<{
     id: number;
     username: string;
@@ -67,7 +67,7 @@ export default function App() {
     const saved = localStorage.getItem('ridis_user');
     const lastActivity = Number(localStorage.getItem('ridis_last_activity') || '0');
     if (saved) {
-      if (lastActivity > 0 && Date.now() - lastActivity > 10 * 60 * 1000) {
+      if (lastActivity > 0 && Date.now() - lastActivity > 5 * 60 * 1000) {
         localStorage.removeItem('ridis_user');
         localStorage.removeItem('ridis_last_activity');
         return null;
@@ -383,7 +383,7 @@ export default function App() {
     }
   }, []);
 
-  // Auto-logout after 10 minutes of inactivity
+  // Auto-logout after 5 minutes of inactivity
   useEffect(() => {
     if (!currentUser) return;
 
@@ -413,7 +413,7 @@ export default function App() {
       }
       const storedLast = Number(localStorage.getItem('ridis_last_activity') || lastRecorded);
       if (Date.now() - storedLast >= INACTIVITY_TIMEOUT_MS) {
-        handleLogout('Sessão expirada após 10 minutos de inatividade.');
+        handleLogout('Sessão expirada após 5 minutos de inatividade.');
       }
     }, 15000);
 
