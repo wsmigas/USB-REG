@@ -9,7 +9,7 @@ import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
 const app = express();
-const PORT = 3005;
+const PORT = 3000;
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -3472,7 +3472,10 @@ app.post('/api/admin/system/update-github', (req, res) => {
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -3508,10 +3511,6 @@ async function startServer() {
       }
     });
   });
-
-  if (process.env.APPLET_ID) {
-    app.listen(3000, '0.0.0.0');
-  }
 }
 
 startServer();
