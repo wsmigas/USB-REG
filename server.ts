@@ -1065,13 +1065,15 @@ app.get('/api/discos', (req, res) => {
       }[];
       matchedFiles = sampleRows.map((r) => r.nome_ficheiro);
     }
+    const indexedCount = getDiscoFileCount(d.id).total_files;
     return {
       ...d,
+      total_imagens: Number(d.total_imagens) || indexedCount,
       verificado: Boolean(d.verificado),
       integrado: Boolean(d.integrado),
       armazenado_servidor: Boolean(d.armazenado_servidor),
-      indexed_files_count: Number(d.total_imagens) || 0,
-      indexed_tif_count: Number(d.total_imagens) || 0,
+      indexed_files_count: indexedCount || Number(d.total_imagens) || 0,
+      indexed_tif_count: indexedCount || Number(d.total_imagens) || 0,
       matched_files: matchedFiles,
       matched_files_total: totalMatches,
     };
@@ -1202,7 +1204,7 @@ app.get('/api/discos/:id/ficheiros', (req, res) => {
        FROM relatorio_ficheiros 
        WHERE ${clauses.join(' AND ')}
        ORDER BY nome_ficheiro ASC
-       LIMIT 500`
+       LIMIT 2500`
     )
     .all(...params);
 
@@ -1276,9 +1278,13 @@ function handleCreateDiscoRecord(req: express.Request, res: express.Response) {
 
     if (relatorio_path) {
       indexResult = indexarRelatorio(newId, path.join(RELATORIOS_DIR, relatorio_path));
-      if (totalImagensInput === 0 && indexResult.tifCount > 0) {
-        db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(indexResult.tifCount, newId);
+      if (totalImagensInput === 0) {
+        const countToSet = indexResult.tifCount > 0 ? indexResult.tifCount : indexResult.total;
+        if (countToSet > 0) {
+          db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(countToSet, newId);
+        }
       }
+      invalidateIndexCountsCache(newId);
     }
 
     res.json({
@@ -1398,9 +1404,13 @@ function handleUpdateDiscoRecord(discoId: number, existing: any, req: express.Re
     let indexResult = { total: 0, tifCount: 0 };
     if (newUploadedFile && relatorio_path) {
       indexResult = indexarRelatorio(discoId, path.join(RELATORIOS_DIR, relatorio_path));
-      if (totalImagensInput === 0 && indexResult.tifCount > 0) {
-        db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(indexResult.tifCount, discoId);
+      if (totalImagensInput === 0) {
+        const countToSet = indexResult.tifCount > 0 ? indexResult.tifCount : indexResult.total;
+        if (countToSet > 0) {
+          db.prepare('UPDATE discos_usb SET total_imagens = ? WHERE id = ?').run(countToSet, discoId);
+        }
       }
+      invalidateIndexCountsCache(discoId);
     }
 
     res.json({

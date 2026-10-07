@@ -2028,10 +2028,10 @@ export default function App() {
                             onClick={() => {
                               setInspectModalDisco(d);
                               setInspectMode('index');
-                              setInspectQuery(busca);
+                              setInspectQuery('');
                             }}
                             className="px-2 py-1 rounded border border-[#0dcaf0] text-[#0dcaf0] hover:bg-[#0dcaf0]/15 transition-colors cursor-pointer"
-                            title="Abrir Relatório do Disco (Snap2HTML)"
+                            title="Abrir Relatório / Índice do Disco"
                           >
                             <FileText className="w-3.5 h-3.5" />
                           </button>
