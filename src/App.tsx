@@ -35,6 +35,7 @@ import {
   IndexedFileRow,
   Usuario,
   DbAdminStatus,
+  UserRole,
 } from './types';
 
 type ActiveTab = 'inventario' | 'usuarios' | 'admin_bd';
@@ -63,6 +64,7 @@ export default function App() {
     id: number;
     username: string;
     is_admin: boolean;
+    role: UserRole;
   } | null>(() => {
     const saved = localStorage.getItem('ridis_user');
     const lastActivity = Number(localStorage.getItem('ridis_last_activity') || '0');
@@ -73,7 +75,11 @@ export default function App() {
         return null;
       }
       try {
-        return JSON.parse(saved);
+        const u = JSON.parse(saved);
+        if (u && !u.role) {
+          u.role = u.is_admin ? 'admin' : 'operador';
+        }
+        return u;
       } catch {
         // ignore
       }
@@ -140,6 +146,7 @@ export default function App() {
 
   // Create / Edit Disk Modal state
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isFormReadOnly, setIsFormReadOnly] = useState(false);
   const [editingDisco, setEditingDisco] = useState<DiscoUsb | null>(null);
   const [formSaving, setFormSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -182,9 +189,15 @@ export default function App() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [newUsername, setNewUsername] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
-  const [newUserAdmin, setNewUserAdmin] = useState(false);
+  const [newUserRole, setNewUserRole] = useState<UserRole>('operador');
   const [passwordInputs, setPasswordInputs] = useState<Record<number, string>>({});
   const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<number | null>(null);
+
+  // Permission helpers
+  const isRootAdmin = currentUser?.username.toLowerCase() === 'admin';
+  const isAdmin = Boolean(currentUser?.is_admin || currentUser?.role === 'admin');
+  const isRevisor = currentUser?.role === 'revisor';
+  const canEditOrDelete = isAdmin || isRevisor;
 
   // Database Administration Tab state (Admin Only)
   const [dbAdminStatus, setDbAdminStatus] = useState<DbAdminStatus | null>(null);
@@ -307,13 +320,13 @@ export default function App() {
 
   // Ensure users cannot remain on restricted tabs
   useEffect(() => {
-    if (currentUser && !currentUser.is_admin && activeTab === 'usuarios') {
+    if (currentUser && !isAdmin && activeTab === 'usuarios') {
       setActiveTab('inventario');
     }
-    if (currentUser && currentUser.username.toLowerCase() !== 'admin' && activeTab === 'admin_bd') {
+    if (currentUser && !isRootAdmin && activeTab === 'admin_bd') {
       setActiveTab('inventario');
     }
-  }, [currentUser, activeTab]);
+  }, [currentUser, isAdmin, isRootAdmin, activeTab]);
 
   // Inspect modal files loader
   const fetchInspectFiles = useCallback(async () => {
@@ -425,8 +438,9 @@ export default function App() {
     };
   }, [currentUser, formSaving, restoringDb, migratingReports, gitUpdating, INACTIVITY_TIMEOUT_MS, handleLogout]);
 
-  // Open New / Edit Disk Modal
+  // Open New / Edit / View Disk Modal
   const openNewDiscoModal = () => {
+    setIsFormReadOnly(false);
     setEditingDisco(null);
     setFormFile(null);
     setFormError(null);
@@ -453,6 +467,34 @@ export default function App() {
   };
 
   const openEditDiscoModal = (d: DiscoUsb) => {
+    setIsFormReadOnly(false);
+    setEditingDisco(d);
+    setFormFile(null);
+    setFormError(null);
+    setUploadProgress(null);
+    setFormData({
+      arquivo: d.arquivo || '',
+      remetente: d.remetente || '',
+      data_entrada: d.data_entrada || '',
+      ticket_num: d.ticket_num || '',
+      id_disco: d.id_disco || '',
+      projeto: d.projeto || '',
+      localizacao: d.localizacao || '',
+      tamanho_disco: d.tamanho_disco || '',
+      marca: d.marca || '',
+      numero_serie: d.numero_serie || '',
+      verificado: Boolean(d.verificado),
+      ticket_integracao: d.ticket_integracao || '',
+      integrado: Boolean(d.integrado),
+      armazenado_servidor: Boolean(d.armazenado_servidor),
+      total_imagens: Number(d.total_imagens) || 0,
+      observacoes: d.observacoes || '',
+    });
+    setIsFormOpen(true);
+  };
+
+  const openViewDiscoModal = (d: DiscoUsb) => {
+    setIsFormReadOnly(true);
     setEditingDisco(d);
     setFormFile(null);
     setFormError(null);
@@ -662,7 +704,7 @@ export default function App() {
         body: JSON.stringify({
           username: newUsername,
           password: newUserPassword,
-          is_admin: newUserAdmin,
+          role: newUserRole,
         }),
       });
       const data = await res.json();
@@ -673,10 +715,29 @@ export default function App() {
       showFlash(data.message, 'success');
       setNewUsername('');
       setNewUserPassword('');
-      setNewUserAdmin(false);
+      setNewUserRole('operador');
       fetchUsuarios();
     } catch {
       showFlash('Erro ao criar utilizador.', 'danger');
+    }
+  };
+
+  const handleUpdateUserRole = async (userId: number, role: UserRole) => {
+    try {
+      const res = await fetch(`/api/usuarios/${userId}/role`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, current_user_id: currentUser?.id }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showFlash(data.message, 'success');
+        fetchUsuarios();
+      } else {
+        showFlash(data.error || 'Erro ao alterar perfil.', 'danger');
+      }
+    } catch {
+      showFlash('Erro ao comunicar com o servidor.', 'danger');
     }
   };
 
@@ -1427,7 +1488,7 @@ export default function App() {
             >
               Inventário de Discos
             </button>
-            {currentUser.is_admin && (
+            {isAdmin && (
               <button
                 type="button"
                 onClick={() => setActiveTab('usuarios')}
@@ -1442,7 +1503,7 @@ export default function App() {
                 Utilizadores
               </button>
             )}
-            {currentUser.username.toLowerCase() === 'admin' && (
+            {isRootAdmin && (
               <button
                 type="button"
                 onClick={() => setActiveTab('admin_bd')}
@@ -1462,14 +1523,16 @@ export default function App() {
 
           {/* Zone 3: Primary Actions */}
           <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <button
-              type="button"
-              onClick={openNewDiscoModal}
-              className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              Novo Registo
-            </button>
+            {canEditOrDelete && (
+              <button
+                type="button"
+                onClick={openNewDiscoModal}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Novo Registo
+              </button>
+            )}
 
             <button
               type="button"
@@ -1490,18 +1553,22 @@ export default function App() {
                   ? 'bg-slate-900/90 border-slate-800 text-slate-200'
                   : 'bg-slate-100 border-slate-200 text-slate-800'
               }`}
-              title={`Sessão iniciada como ${currentUser.username} (${currentUser.is_admin ? 'Administrador' : 'Operador'})`}
+              title={`Sessão iniciada como ${currentUser.username} (${
+                isAdmin ? 'Administrador' : isRevisor ? 'Revisor' : 'Operador'
+              })`}
             >
               <Users className="w-3.5 h-3.5 text-blue-400 shrink-0" />
               <span className="font-semibold">{currentUser.username}</span>
               <span
                 className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${
-                  currentUser.is_admin
-                    ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                    : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+                  isAdmin
+                    ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30'
+                    : isRevisor
+                    ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30'
+                    : 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
                 }`}
               >
-                {currentUser.is_admin ? 'Admin' : 'Operador'}
+                {isAdmin ? 'Admin' : isRevisor ? 'Revisor' : 'Operador'}
               </span>
             </div>
 
@@ -1916,8 +1983,9 @@ export default function App() {
                         <div>
                           <button
                             type="button"
-                            onClick={() => openEditDiscoModal(d)}
+                            onClick={() => openViewDiscoModal(d)}
                             className="font-bold text-sm text-[#6ea8fe] hover:underline text-left cursor-pointer"
+                            title="Clique para ver os detalhes do disco (modo leitura)"
                           >
                             {d.id_disco || 'Sem ID'}
                           </button>
@@ -2037,16 +2105,18 @@ export default function App() {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => openEditDiscoModal(d)}
-                          className="px-2 py-1 rounded border border-[#ffc107] text-[#ffc107] hover:bg-[#ffc107]/15 transition-colors cursor-pointer"
-                          title="Editar Registo"
-                        >
-                          <Edit3 className="w-3.5 h-3.5" />
-                        </button>
+                        {canEditOrDelete && (
+                          <button
+                            type="button"
+                            onClick={() => openEditDiscoModal(d)}
+                            className="px-2 py-1 rounded border border-[#ffc107] text-[#ffc107] hover:bg-[#ffc107]/15 transition-colors cursor-pointer"
+                            title="Editar Registo"
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
 
-                        {currentUser.is_admin && (
+                        {canEditOrDelete && (
                           <>
                             {confirmDeleteId === d.id ? (
                               <div className="inline-flex items-center gap-1">
@@ -2175,7 +2245,7 @@ export default function App() {
         )}
 
         {/* TAB 2: GESTÃO DE UTILIZADORES (ADMIN) */}
-        {activeTab === 'usuarios' && currentUser.is_admin && (
+        {activeTab === 'usuarios' && isAdmin && (
           <div className="max-w-4xl mx-auto space-y-6">
             <div>
               <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
@@ -2183,7 +2253,7 @@ export default function App() {
                 Gestão de Utilizadores
               </h1>
               <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
-                Administração de contas de acesso (Administradores e Operadores) gravadas na tabela{' '}
+                Administração de contas de acesso (Administradores, Revisores e Operadores) gravadas na tabela{' '}
                 <span className="font-mono">usuarios</span>.
               </p>
             </div>
@@ -2196,7 +2266,7 @@ export default function App() {
             >
               <h2 className="text-sm font-semibold mb-4">Novo Utilizador</h2>
               <form onSubmit={handleCreateUser} className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                <div className="md:col-span-4">
+                <div className="md:col-span-3">
                   <label className="block text-xs font-medium mb-1">Utilizador</label>
                   <input
                     type="text"
@@ -2211,7 +2281,7 @@ export default function App() {
                     }`}
                   />
                 </div>
-                <div className="md:col-span-4">
+                <div className="md:col-span-3">
                   <label className="block text-xs font-medium mb-1">Palavra-passe</label>
                   <input
                     type="password"
@@ -2226,15 +2296,21 @@ export default function App() {
                     }`}
                   />
                 </div>
-                <div className="md:col-span-2 flex items-center h-9">
-                  <label className="flex items-center gap-2 text-xs cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={newUserAdmin}
-                      onChange={(e) => setNewUserAdmin(e.target.checked)}
-                    />
-                    <span>Administrador</span>
-                  </label>
+                <div className="md:col-span-4">
+                  <label className="block text-xs font-medium mb-1">Perfil de Acesso</label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as UserRole)}
+                    className={`w-full px-3 py-2 rounded-lg border text-xs cursor-pointer ${
+                      theme === 'dark'
+                        ? 'bg-slate-950 border-slate-800 text-slate-100'
+                        : 'bg-slate-50 border-slate-300 text-slate-900'
+                    }`}
+                  >
+                    <option value="operador">Operador (Apenas Consulta)</option>
+                    <option value="revisor">Revisor (Ver, Editar e Apagar)</option>
+                    <option value="admin">Administrador (Acesso e Gestão Total)</option>
+                  </select>
                 </div>
                 <div className="md:col-span-2">
                   <button
@@ -2274,23 +2350,35 @@ export default function App() {
                     <tr key={u.id}>
                       <td className="py-3 px-4 font-semibold">{u.username}</td>
                       <td className="py-3 px-4">
-                        <span className={u.is_admin ? 'text-blue-400 font-semibold' : 'text-slate-400'}>
-                          {u.is_admin ? 'Administrador' : 'Operador'}
-                        </span>
-                        {u.id !== currentUser.id && (
-                          <button
-                            type="button"
-                            onClick={() => handleToggleAdmin(u.id)}
-                            title={u.is_admin ? 'Despromover para Operador' : 'Promover a Administrador'}
-                            className="ml-2 inline-flex items-center text-slate-400 hover:text-blue-400 align-middle cursor-pointer"
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                              u.role === 'admin'
+                                ? 'bg-purple-600/20 text-purple-400 border border-purple-500/30'
+                                : u.role === 'revisor'
+                                ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30'
+                                : 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
+                            }`}
                           >
-                            {u.is_admin ? (
-                              <ArrowDownCircle className="w-4 h-4" />
-                            ) : (
-                              <ArrowUpCircle className="w-4 h-4" />
-                            )}
-                          </button>
-                        )}
+                            {u.role === 'admin' ? 'Administrador' : u.role === 'revisor' ? 'Revisor' : 'Operador'}
+                          </span>
+                          {u.id !== currentUser.id && (
+                            <select
+                              value={u.role || (u.is_admin ? 'admin' : 'operador')}
+                              onChange={(e) => handleUpdateUserRole(u.id, e.target.value as UserRole)}
+                              className={`px-2 py-1 rounded border text-[11px] cursor-pointer ${
+                                theme === 'dark'
+                                  ? 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+                                  : 'bg-slate-50 border-slate-300 text-slate-700 hover:border-slate-400'
+                              }`}
+                              title="Alterar perfil do utilizador"
+                            >
+                              <option value="operador">Operador</option>
+                              <option value="revisor">Revisor</option>
+                              <option value="admin">Administrador</option>
+                            </select>
+                          )}
+                        </div>
                       </td>
                       <td className="py-3 px-4 font-mono tabular-nums text-slate-400">{u.created_at}</td>
                       <td className="py-3 px-4">
@@ -3230,14 +3318,31 @@ export default function App() {
               theme === 'dark' ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
             }`}
           >
-            <div className="px-6 py-4 bg-blue-600 text-white flex items-center justify-between">
-              <h2 className="text-base font-bold">
-                {editingDisco ? `Editar Disco: ${editingDisco.id_disco}` : 'Registar Novo Disco'}
-              </h2>
+            <div
+              className={`px-6 py-4 text-white flex items-center justify-between ${
+                isFormReadOnly ? 'bg-slate-800' : 'bg-blue-600'
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <h2 className="text-base font-bold">
+                  {isFormReadOnly
+                    ? `Ficha do Disco: ${editingDisco?.id_disco || formData.id_disco}`
+                    : editingDisco
+                    ? `Editar Disco: ${editingDisco.id_disco}`
+                    : 'Registar Novo Disco'}
+                </h2>
+                {isFormReadOnly && (
+                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-700 text-slate-300 border border-slate-600">
+                    Modo Leitura (Protegido)
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
                 onClick={() => setIsFormOpen(false)}
-                className="p-1 rounded hover:bg-blue-700 transition-colors cursor-pointer"
+                className={`p-1 rounded transition-colors cursor-pointer ${
+                  isFormReadOnly ? 'hover:bg-slate-700' : 'hover:bg-blue-700'
+                }`}
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3266,10 +3371,13 @@ export default function App() {
                 <div>
                   <label className="block text-xs font-semibold mb-1">Arquivo</label>
                   <select
+                    disabled={isFormReadOnly}
                     value={formData.arquivo}
                     onChange={(e) => setFormData({ ...formData, arquivo: e.target.value })}
                     className={`w-full px-3 py-2 rounded-lg border text-xs ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3287,10 +3395,13 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Remetente</label>
                   <input
                     type="text"
+                    disabled={isFormReadOnly}
                     value={formData.remetente}
                     onChange={(e) => setFormData({ ...formData, remetente: e.target.value })}
                     className={`w-full px-3 py-2 rounded-lg border text-xs ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3303,10 +3414,13 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Data</label>
                   <input
                     type="date"
+                    disabled={isFormReadOnly}
                     value={formData.data_entrada}
                     onChange={(e) => setFormData({ ...formData, data_entrada: e.target.value })}
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3317,12 +3431,15 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Ticket nº *</label>
                   <input
                     type="text"
-                    required
+                    required={!isFormReadOnly}
+                    disabled={isFormReadOnly}
                     value={formData.ticket_num}
                     onChange={(e) => setFormData({ ...formData, ticket_num: e.target.value })}
                     placeholder="TICK-2026-..."
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3333,12 +3450,15 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">ID do disco *</label>
                   <input
                     type="text"
-                    required
+                    required={!isFormReadOnly}
+                    disabled={isFormReadOnly}
                     value={formData.id_disco}
                     onChange={(e) => setFormData({ ...formData, id_disco: e.target.value })}
                     placeholder="DISCO-..."
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3349,10 +3469,13 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Projeto</label>
                   <input
                     type="text"
+                    disabled={isFormReadOnly}
                     value={formData.projeto}
                     onChange={(e) => setFormData({ ...formData, projeto: e.target.value })}
                     className={`w-full px-3 py-2 rounded-lg border text-xs ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3365,11 +3488,14 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Localização</label>
                   <input
                     type="text"
+                    disabled={isFormReadOnly}
                     value={formData.localizacao}
                     onChange={(e) => setFormData({ ...formData, localizacao: e.target.value })}
                     placeholder="Armário A · Gaveta 2"
                     className={`w-full px-3 py-2 rounded-lg border text-xs ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3380,11 +3506,14 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Tamanho do disco</label>
                   <input
                     type="text"
+                    disabled={isFormReadOnly}
                     value={formData.tamanho_disco}
                     onChange={(e) => setFormData({ ...formData, tamanho_disco: e.target.value })}
                     placeholder="4 TB"
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3395,11 +3524,14 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Marca</label>
                   <input
                     type="text"
+                    disabled={isFormReadOnly}
                     value={formData.marca}
                     onChange={(e) => setFormData({ ...formData, marca: e.target.value })}
                     placeholder="Seagate / WD"
                     className={`w-full px-3 py-2 rounded-lg border text-xs ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3410,12 +3542,15 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">n/s: *</label>
                   <input
                     type="text"
-                    required
+                    required={!isFormReadOnly}
+                    disabled={isFormReadOnly}
                     value={formData.numero_serie}
                     onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
                     placeholder="Número de série"
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3424,9 +3559,10 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end pt-1">
-                <label className="flex items-center gap-2.5 text-xs font-medium cursor-pointer py-2">
+                <label className={`flex items-center gap-2.5 text-xs font-medium py-2 ${isFormReadOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
+                    disabled={isFormReadOnly}
                     checked={formData.verificado}
                     onChange={(e) => setFormData({ ...formData, verificado: e.target.checked })}
                     className="w-4 h-4 rounded"
@@ -3438,11 +3574,14 @@ export default function App() {
                   <label className="block text-xs font-semibold mb-1">Ticket de integração</label>
                   <input
                     type="text"
+                    disabled={isFormReadOnly}
                     value={formData.ticket_integracao}
                     onChange={(e) => setFormData({ ...formData, ticket_integracao: e.target.value })}
                     placeholder="INT-2026-..."
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3451,9 +3590,10 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
-                <label className="flex items-center gap-2.5 text-xs font-medium cursor-pointer py-2">
+                <label className={`flex items-center gap-2.5 text-xs font-medium py-2 ${isFormReadOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
+                    disabled={isFormReadOnly}
                     checked={formData.integrado}
                     onChange={(e) => setFormData({ ...formData, integrado: e.target.checked })}
                     className="w-4 h-4 rounded"
@@ -3461,9 +3601,10 @@ export default function App() {
                   <span>Integrado (I)</span>
                 </label>
 
-                <label className="flex items-center gap-2.5 text-xs font-medium cursor-pointer py-2">
+                <label className={`flex items-center gap-2.5 text-xs font-medium py-2 ${isFormReadOnly ? 'cursor-default' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
+                    disabled={isFormReadOnly}
                     checked={formData.armazenado_servidor}
                     onChange={(e) =>
                       setFormData({ ...formData, armazenado_servidor: e.target.checked })
@@ -3480,12 +3621,15 @@ export default function App() {
                   <input
                     type="number"
                     min={0}
+                    disabled={isFormReadOnly}
                     value={formData.total_imagens}
                     onChange={(e) =>
                       setFormData({ ...formData, total_imagens: parseInt(e.target.value, 10) || 0 })
                     }
                     className={`w-full px-3 py-2 rounded-lg border text-xs font-mono ${
-                      theme === 'dark'
+                      isFormReadOnly
+                        ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                        : theme === 'dark'
                         ? 'bg-slate-950 border-slate-700 text-slate-100'
                         : 'bg-slate-50 border-slate-300 text-slate-900'
                     }`}
@@ -3493,7 +3637,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Snap2HTML Upload Field */}
+              {/* Snap2HTML / TXT / CSV Upload Field */}
               <div
                 className={`p-4 rounded-xl border ${
                   theme === 'dark' ? 'bg-slate-950/80 border-slate-800' : 'bg-slate-50 border-slate-200'
@@ -3513,55 +3657,89 @@ export default function App() {
                     >
                       {editingDisco.relatorio_path}
                     </a>{' '}
-                    ({editingDisco.indexed_tif_count} documentos/códigos indexados) — selecione outro ficheiro abaixo para
-                    substituir e reindexar.
+                    ({editingDisco.indexed_tif_count} documentos/códigos indexados)
+                    {!isFormReadOnly && ' — selecione outro ficheiro abaixo para substituir e reindexar.'}
                   </div>
                 )}
-                <input
-                  type="file"
-                  accept=".html,.htm,.txt,.csv"
-                  onChange={(e) => setFormFile(e.target.files?.[0] || null)}
-                  className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
-                />
-                <p className="text-[11px] text-slate-400 mt-1.5">
-                  Suporta relatórios <strong>Snap2HTML</strong> (<span className="font-mono">.html</span>,{' '}
-                  <span className="font-mono">.htm</span>) e ficheiros de texto/tabela (
-                  <span className="font-mono">.txt</span>, <span className="font-mono">.csv</span>) com códigos de
-                  referência linha a linha (ex: <span className="font-mono">PT-TT-NOT-CNCSC1-001-001-0081</span>). O ficheiro é
-                  guardado em <span className="font-mono">relatorios/</span> e os códigos são indexados
-                  automaticamente na base de dados SQLite.
-                </p>
+                {!isFormReadOnly ? (
+                  <>
+                    <input
+                      type="file"
+                      accept=".html,.htm,.txt,.csv"
+                      onChange={(e) => setFormFile(e.target.files?.[0] || null)}
+                      className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1.5">
+                      Suporta relatórios <strong>Snap2HTML</strong> (<span className="font-mono">.html</span>,{' '}
+                      <span className="font-mono">.htm</span>) e ficheiros de texto/tabela (
+                      <span className="font-mono">.txt</span>, <span className="font-mono">.csv</span>) com códigos de
+                      referência linha a linha (ex: <span className="font-mono">PT-TT-NOT-CNCSC1-001-001-0081</span>). O ficheiro é
+                      guardado em <span className="font-mono">relatorios/</span> e os códigos são indexados
+                      automaticamente na base de dados SQLite.
+                    </p>
+                  </>
+                ) : !editingDisco?.relatorio_path ? (
+                  <p className="text-xs text-slate-500 italic">Sem relatório ou ficheiro associado.</p>
+                ) : null}
               </div>
 
               <div>
                 <label className="block text-xs font-semibold mb-1">Observações</label>
                 <textarea
                   rows={3}
+                  disabled={isFormReadOnly}
                   value={formData.observacoes}
                   onChange={(e) => setFormData({ ...formData, observacoes: e.target.value })}
                   className={`w-full px-3 py-2 rounded-lg border text-xs ${
-                    theme === 'dark'
+                    isFormReadOnly
+                      ? 'opacity-85 cursor-default bg-slate-900 border-slate-700 text-slate-200'
+                      : theme === 'dark'
                       ? 'bg-slate-950 border-slate-700 text-slate-100'
                       : 'bg-slate-50 border-slate-300 text-slate-900'
                   }`}
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsFormOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-slate-700 text-xs font-medium hover:bg-slate-800 transition-colors cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={formSaving}
-                  className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  {formSaving ? 'A guardar e indexar...' : 'Guardar Registo'}
-                </button>
+              <div className="flex items-center justify-between pt-3 border-t border-slate-800">
+                {isFormReadOnly ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsFormOpen(false)}
+                      className="px-4 py-2 rounded-lg border border-slate-700 text-xs font-medium hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      Fechar
+                    </button>
+                    {canEditOrDelete && (
+                      <button
+                        type="button"
+                        onClick={() => setIsFormReadOnly(false)}
+                        className="px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Desbloquear para editar este registo"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        Editar este Registo
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-end gap-2.5 w-full">
+                    <button
+                      type="button"
+                      onClick={() => setIsFormOpen(false)}
+                      className="px-4 py-2 rounded-lg border border-slate-700 text-xs font-medium hover:bg-slate-800 transition-colors cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={formSaving}
+                      className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      {formSaving ? 'A guardar e indexar...' : 'Guardar Registo'}
+                    </button>
+                  </div>
+                )}
               </div>
             </form>
           </div>

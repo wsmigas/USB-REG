@@ -74,10 +74,13 @@ export interface RelatorioFileInfo {
   } | null;
 }
 
+export type UserRole = 'admin' | 'revisor' | 'operador';
+
 export interface Usuario {
   id: number;
   username: string;
   is_admin: boolean;
+  role: UserRole;
   created_at: string;
 }
 

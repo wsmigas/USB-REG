@@ -138,6 +138,7 @@ function ensureDatabaseSchema(targetDb: DatabaseSync) {
     'ALTER TABLE discos_usb ADD COLUMN relatorio_path TEXT;',
     'ALTER TABLE relatorio_ficheiros ADD COLUMN tamanho_bytes INTEGER DEFAULT 0;',
     "ALTER TABLE relatorio_ficheiros ADD COLUMN pasta TEXT DEFAULT '';",
+    "ALTER TABLE usuarios ADD COLUMN role TEXT DEFAULT 'operador';",
   ];
   for (const sql of alterColumns) {
     try {
@@ -145,6 +146,11 @@ function ensureDatabaseSchema(targetDb: DatabaseSync) {
     } catch {
       // Column already exists
     }
+  }
+  try {
+    targetDb.exec("UPDATE usuarios SET role = 'admin' WHERE is_admin = 1 AND (role IS NULL OR role = '' OR role = 'operador');");
+  } catch {
+    // ignore
   }
 
   // Only create indexes on relatorio_ficheiros if an index on that column does not already exist
@@ -663,10 +669,27 @@ function gerarRelatorioSnap2HtmlReal(
 function seedDatabaseIfNeeded() {
   const userCountRow = db.prepare('SELECT COUNT(*) as cnt FROM usuarios').get() as { cnt: number };
   if (userCountRow.cnt === 0) {
-    const insUser = db.prepare('INSERT INTO usuarios (username, password_hash, is_admin) VALUES (?, ?, ?)');
-    insUser.run('admin', hashPassword('admin123'), 1);
-    insUser.run('jmagalhaes', hashPassword('ridis2026'), 1);
-    insUser.run('operador', hashPassword('operador123'), 0);
+    const insUser = db.prepare('INSERT INTO usuarios (username, password_hash, is_admin, role) VALUES (?, ?, ?, ?)');
+    insUser.run('admin', hashPassword('admin123'), 1, 'admin');
+    insUser.run('jmagalhaes', hashPassword('ridis2026'), 1, 'admin');
+    insUser.run('revisor', hashPassword('revisor123'), 0, 'revisor');
+    insUser.run('operador', hashPassword('operador123'), 0, 'operador');
+  } else {
+    // Ensure revisor user exists
+    const revisorUser = db.prepare("SELECT id FROM usuarios WHERE username = 'revisor'").get();
+    if (!revisorUser) {
+      db.prepare('INSERT INTO usuarios (username, password_hash, is_admin, role) VALUES (?, ?, ?, ?)').run(
+        'revisor',
+        hashPassword('revisor123'),
+        0,
+        'revisor'
+      );
+    }
+  }
+  try {
+    db.prepare("UPDATE usuarios SET role = CASE WHEN is_admin = 1 THEN 'admin' ELSE 'operador' END WHERE role IS NULL OR role = ''").run();
+  } catch {
+    // ignore
   }
 }
 
@@ -845,11 +868,13 @@ app.post('/api/login', (req, res) => {
     | undefined;
 
   if (user && verifyPassword(password, user.password_hash)) {
+    const userRole = (user as any).role || (user.is_admin ? 'admin' : 'operador');
     res.json({
       user: {
         id: user.id,
         username: user.username,
-        is_admin: Boolean(user.is_admin),
+        is_admin: userRole === 'admin',
+        role: userRole,
       },
     });
   } else {
@@ -1866,20 +1891,28 @@ app.post('/api/importar-csv', uploadMemory.single('file'), (req, res) => {
 // User Management APIs
 app.get('/api/usuarios', (_req, res) => {
   const usuarios = db
-    .prepare('SELECT id, username, is_admin, created_at FROM usuarios ORDER BY username')
-    .all() as { id: number; username: string; is_admin: number; created_at: string }[];
+    .prepare('SELECT id, username, is_admin, role, created_at FROM usuarios ORDER BY username')
+    .all() as { id: number; username: string; is_admin: number; role?: string; created_at: string }[];
   res.json({
-    usuarios: usuarios.map((u) => ({
-      ...u,
-      is_admin: Boolean(u.is_admin),
-    })),
+    usuarios: usuarios.map((u) => {
+      const role = u.role || (u.is_admin ? 'admin' : 'operador');
+      return {
+        id: u.id,
+        username: u.username,
+        is_admin: role === 'admin',
+        role: role as 'admin' | 'revisor' | 'operador',
+        created_at: u.created_at,
+      };
+    }),
   });
 });
 
 app.post('/api/usuarios', (req, res) => {
   const username = String(req.body.username || '').trim();
   const password = String(req.body.password || '');
-  const is_admin = req.body.is_admin ? 1 : 0;
+  const rawRole = String(req.body.role || '').toLowerCase();
+  const role = rawRole === 'admin' ? 'admin' : rawRole === 'revisor' ? 'revisor' : req.body.is_admin ? 'admin' : 'operador';
+  const is_admin = role === 'admin' ? 1 : 0;
 
   if (!username || !password) {
     res.status(400).json({ error: 'Utilizador e palavra-passe são obrigatórios.' });
@@ -1887,15 +1920,51 @@ app.post('/api/usuarios', (req, res) => {
   }
 
   try {
-    db.prepare('INSERT INTO usuarios (username, password_hash, is_admin) VALUES (?, ?, ?)').run(
+    db.prepare('INSERT INTO usuarios (username, password_hash, is_admin, role) VALUES (?, ?, ?, ?)').run(
       username,
       hashPassword(password),
-      is_admin
+      is_admin,
+      role
     );
-    res.json({ message: `Utilizador "${username}" criado com sucesso.` });
+    const roleNome = role === 'admin' ? 'Administrador' : role === 'revisor' ? 'Revisor' : 'Operador';
+    res.json({ message: `Utilizador "${username}" criado com sucesso como ${roleNome}.` });
   } catch {
     res.status(409).json({ error: `Já existe um utilizador com o nome "${username}".` });
   }
+});
+
+app.post('/api/usuarios/:id/role', (req, res) => {
+  const id = Number(req.params.id);
+  const currentUserId = Number(req.body.current_user_id || 0);
+  const newRole = String(req.body.role || '').toLowerCase();
+
+  if (!['admin', 'revisor', 'operador'].includes(newRole)) {
+    res.status(400).json({ error: 'Perfil inválido. Opções: Administrador, Revisor ou Operador.' });
+    return;
+  }
+
+  if (id === currentUserId && newRole !== 'admin') {
+    res.status(400).json({
+      error: 'Não podes despromover a tua própria conta de Administrador enquanto estás autenticado.',
+    });
+    return;
+  }
+
+  const user = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(id) as any;
+  if (!user) {
+    res.status(404).json({ error: 'Utilizador não encontrado.' });
+    return;
+  }
+
+  const is_admin = newRole === 'admin' ? 1 : 0;
+  db.prepare('UPDATE usuarios SET is_admin = ?, role = ? WHERE id = ?').run(is_admin, newRole, id);
+
+  const roleName = newRole === 'admin' ? 'Administrador' : newRole === 'revisor' ? 'Revisor' : 'Operador';
+  res.json({
+    message: `Perfil do utilizador "${user.username}" alterado para ${roleName}.`,
+    role: newRole,
+    is_admin: Boolean(is_admin),
+  });
 });
 
 app.post('/api/usuarios/:id/password', (req, res) => {
