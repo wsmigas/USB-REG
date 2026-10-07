@@ -248,18 +248,32 @@ function sanitizeFilename(input: string): string {
  * Example: "PT-TT-JS-A-B-E-1_m0012.TIF" -> "PT-TT-JS-A-B-E-1"
  */
 export function extrairCodigoReferencia(rawName: string): string {
-  const baseName = rawName.split(/[/\\]/).pop() || rawName;
-  const semExt = baseName.replace(/\.(?:tiff?)$/i, '').trim();
+  let cleaned = String(rawName || '').trim().replace(/^["']|["']$/g, '');
+  if (!cleaned) return '';
+
+  // If there's a Windows drive letter or path like "E:\Pastas\PT-TT-..." or "/home/user/PT-TT-...", strip leading folder
+  const driveOrPathMatch = cleaned.match(/[A-Za-z]:[/\\](?:.*[/\\])?(PT[-/].*)$/i);
+  if (driveOrPathMatch) {
+    cleaned = driveOrPathMatch[1];
+  } else if (!cleaned.toUpperCase().startsWith('PT-') && !cleaned.toUpperCase().startsWith('PT/')) {
+    // Standard file path: take last component if it has directory separators
+    cleaned = cleaned.split(/[/\\]/).pop() || cleaned;
+  }
+
+  const semExt = cleaned.replace(/\.(?:tiff?|txt|csv|html?)$/i, '').trim();
+  // Normalize slashes to hyphens in reference codes
+  const normalizedSlashes = semExt.replace(/\//g, '-');
+
   // Match 1st element before '_m0001' (or '_0001')
-  const matchMatriz = semExt.match(/^(.+?)_[mM]?\d+.*$/);
+  const matchMatriz = normalizedSlashes.match(/^(.+?)_[mM]?\d+.*$/);
   if (matchMatriz) {
     return matchMatriz[1].trim().toUpperCase();
   }
-  const idxUnderscore = semExt.indexOf('_');
+  const idxUnderscore = normalizedSlashes.indexOf('_');
   if (idxUnderscore > 0) {
-    return semExt.slice(0, idxUnderscore).trim().toUpperCase();
+    return normalizedSlashes.slice(0, idxUnderscore).trim().toUpperCase();
   }
-  return semExt.toUpperCase();
+  return normalizedSlashes.toUpperCase();
 }
 
 /**
@@ -375,9 +389,10 @@ export function compactarRelatorioFicheirosParaCodigosReferencia(runVacuum = tru
 }
 
 /**
- * Linear-time O(N) Snap2HTML parser and indexer.
- * Extracts unique Document Reference Codes (1st element before '_m0001.tif') from a Snap2HTML report (.html/.htm)
- * and indexes ONLY the distinct Document Reference Codes into relatorio_ficheiros while counting total .TIF images.
+ * Linear-time O(N) report and reference code parser and indexer.
+ * Extracts unique Document Reference Codes from Snap2HTML reports (.html/.htm)
+ * or plain text/CSV lists (.txt/.csv with one reference code per line or column)
+ * and indexes the distinct Document Reference Codes into relatorio_ficheiros.
  */
 export function indexarRelatorio(discoId: number, caminhoCompleto: string): { total: number; tifCount: number } {
   if (!fs.existsSync(caminhoCompleto)) {
@@ -399,57 +414,97 @@ export function indexarRelatorio(discoId: number, caminhoCompleto: string): { to
   const documentosExtraidos = new Map<string, { tamanho: number; pasta: string }>();
   let tifCount = 0;
 
-  // Primary linear-time Snap2HTML regex matching both folder headers ("path*0*ts") and files ("name.ext*size*ts")
-  const tokenRegex = /"([^"*\r\n]+)\*(\d+)\*\d+"/g;
-  let currentFolder = '';
-  let match: RegExpExecArray | null;
+  const ext = path.extname(caminhoCompleto).toLowerCase();
+  const isPlainTextOrCsv =
+    ext === '.txt' ||
+    ext === '.csv' ||
+    (!conteudo.includes('<html') && !conteudo.includes('<body') && !conteudo.includes('D.p('));
 
-  while ((match = tokenRegex.exec(conteudo)) !== null) {
-    const rawName = match[1].trim();
-    const rawSize = parseInt(match[2], 10) || 0;
+  if (isPlainTextOrCsv) {
+    // Process plain text or CSV file (reference codes line-by-line, e.g. PT-TT-NOT-CNCSC1-001-001-0081)
+    const lines = conteudo.split(/\r?\n/);
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith('//')) continue;
 
-    // In Snap2HTML, folder headers inside D.p([...]) have *0*timestamp and contain / or \ or :
-    if (rawSize === 0 && (rawName.includes('/') || rawName.includes('\\') || rawName.includes(':'))) {
-      currentFolder = rawName;
-      continue;
-    }
+      // Split line into cells if it contains separators (;, \t, or comma)
+      const parts =
+        line.includes(';') || line.includes('\t')
+          ? line.split(/[;\t]/)
+          : line.includes(',') && !line.includes('PT-') && !line.includes('PT/')
+          ? line.split(',')
+          : [line];
 
-    // Process strictly .TIF and .TIFF files: count total images and deduplicate by Document Reference Code
-    if (/\.(?:tif|tiff)$/i.test(rawName)) {
-      tifCount++;
-      const codigoRef = extrairCodigoReferencia(rawName);
-      if (!codigoRef) continue;
-      const existing = documentosExtraidos.get(codigoRef);
-      if (existing) {
-        existing.tamanho += rawSize;
-        if (!existing.pasta && currentFolder) {
-          existing.pasta = currentFolder;
+      for (const part of parts) {
+        const item = part.trim().replace(/^["']|["']$/g, '');
+        if (!item) continue;
+        if (/\.(?:tif|tiff)$/i.test(item)) {
+          tifCount++;
         }
-      } else {
-        documentosExtraidos.set(codigoRef, {
-          tamanho: rawSize,
-          pasta: currentFolder,
-        });
+        const codigoRef = extrairCodigoReferencia(item);
+        if (codigoRef && codigoRef.length >= 3) {
+          if (!documentosExtraidos.has(codigoRef)) {
+            documentosExtraidos.set(codigoRef, {
+              tamanho: 0,
+              pasta: '',
+            });
+          }
+        }
       }
     }
-  }
+  } else {
+    // Primary linear-time Snap2HTML regex matching both folder headers ("path*0*ts") and files ("name.ext*size*ts")
+    const tokenRegex = /"([^"*\r\n]+)\*(\d+)\*\d+"/g;
+    let currentFolder = '';
+    let match: RegExpExecArray | null;
 
-  // Fallback for plain HTML reports that don't use Snap2HTML's *size*timestamp format
-  if (tifCount === 0) {
-    const simpleTifRegex = /[A-Za-z0-9_\-.]+\.(?:tif|tiff)/gi;
-    const seenTifs = new Set<string>();
-    let m: RegExpExecArray | null;
-    while ((m = simpleTifRegex.exec(conteudo)) !== null) {
-      const upperTif = m[0].toUpperCase();
-      if (!seenTifs.has(upperTif)) {
-        seenTifs.add(upperTif);
+    while ((match = tokenRegex.exec(conteudo)) !== null) {
+      const rawName = match[1].trim();
+      const rawSize = parseInt(match[2], 10) || 0;
+
+      // In Snap2HTML, folder headers inside D.p([...]) have *0*timestamp and contain / or \ or :
+      if (rawSize === 0 && (rawName.includes('/') || rawName.includes('\\') || rawName.includes(':'))) {
+        currentFolder = rawName;
+        continue;
+      }
+
+      // Process strictly .TIF and .TIFF files: count total images and deduplicate by Document Reference Code
+      if (/\.(?:tif|tiff)$/i.test(rawName)) {
         tifCount++;
-        const codigoRef = extrairCodigoReferencia(upperTif);
-        if (codigoRef && !documentosExtraidos.has(codigoRef)) {
+        const codigoRef = extrairCodigoReferencia(rawName);
+        if (!codigoRef) continue;
+        const existing = documentosExtraidos.get(codigoRef);
+        if (existing) {
+          existing.tamanho += rawSize;
+          if (!existing.pasta && currentFolder) {
+            existing.pasta = currentFolder;
+          }
+        } else {
           documentosExtraidos.set(codigoRef, {
-            tamanho: 0,
-            pasta: '',
+            tamanho: rawSize,
+            pasta: currentFolder,
           });
+        }
+      }
+    }
+
+    // Fallback for plain HTML reports that don't use Snap2HTML's *size*timestamp format
+    if (tifCount === 0) {
+      const simpleTifRegex = /[A-Za-z0-9_\-.]+\.(?:tif|tiff)/gi;
+      const seenTifs = new Set<string>();
+      let m: RegExpExecArray | null;
+      while ((m = simpleTifRegex.exec(conteudo)) !== null) {
+        const upperTif = m[0].toUpperCase();
+        if (!seenTifs.has(upperTif)) {
+          seenTifs.add(upperTif);
+          tifCount++;
+          const codigoRef = extrairCodigoReferencia(upperTif);
+          if (codigoRef && !documentosExtraidos.has(codigoRef)) {
+            documentosExtraidos.set(codigoRef, {
+              tamanho: 0,
+              pasta: '',
+            });
+          }
         }
       }
     }
@@ -636,7 +691,12 @@ const uploadReport = multer({
   limits: { fileSize: 200 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const lower = file.originalname.toLowerCase();
-    if (lower.endsWith('.html') || lower.endsWith('.htm')) {
+    if (
+      lower.endsWith('.html') ||
+      lower.endsWith('.htm') ||
+      lower.endsWith('.txt') ||
+      lower.endsWith('.csv')
+    ) {
       cb(null, true);
     } else {
       cb(new Error('ERRO_EXTENSAO'));
@@ -670,8 +730,13 @@ app.post('/api/relatorios/upload-chunk', (req, res) => {
     }
 
     const lowerName = String(originalName || '').toLowerCase();
-    if (!lowerName.endsWith('.html') && !lowerName.endsWith('.htm')) {
-      res.status(400).json({ error: 'O relatório tem de ser um ficheiro .html ou .htm.' });
+    if (
+      !lowerName.endsWith('.html') &&
+      !lowerName.endsWith('.htm') &&
+      !lowerName.endsWith('.txt') &&
+      !lowerName.endsWith('.csv')
+    ) {
+      res.status(400).json({ error: 'O ficheiro tem de ter a extensão .html, .htm, .txt ou .csv.' });
       return;
     }
 
@@ -719,7 +784,7 @@ app.get(['/favicon.svg', '/favicon.ico'], (_req, res) => {
   res.send(FAVICON_SVG);
 });
 
-// Serve Snap2HTML reports from ./relatorios
+// Serve Snap2HTML reports and uploaded text/csv lists from ./relatorios
 app.get('/relatorios/:filename', (req, res) => {
   const filename = req.params.filename;
   const safeName = path.basename(filename);
@@ -731,6 +796,10 @@ app.get('/relatorios/:filename', (req, res) => {
   if (!fs.existsSync(fullPath)) {
     res.status(404).send('Ficheiro de relatório não encontrado na pasta relatorios/.');
     return;
+  }
+  const lower = safeName.toLowerCase();
+  if (lower.endsWith('.txt') || lower.endsWith('.csv')) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   }
   res.sendFile(fullPath);
 });
@@ -1915,7 +1984,13 @@ function buildFullBackupPayload(includeHtmlReports = true) {
   if (includeHtmlReports && fs.existsSync(RELATORIOS_DIR)) {
     const files = fs
       .readdirSync(RELATORIOS_DIR)
-      .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+      .filter((f) => {
+        const lower = f.toLowerCase();
+        return (
+          (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt') || lower.endsWith('.csv')) &&
+          !f.startsWith('.tmp_')
+        );
+      });
     for (const filename of files) {
       try {
         const buf = fs.readFileSync(path.join(RELATORIOS_DIR, filename));
@@ -2352,7 +2427,13 @@ function restoreFromFullJsonPayload(payload: any): {
   for (const rf of relatoriosFiles) {
     if (rf && rf.filename && rf.content_base64) {
       const safeName = path.basename(String(rf.filename));
-      if (safeName.toLowerCase().endsWith('.html') || safeName.toLowerCase().endsWith('.htm')) {
+      const lower = safeName.toLowerCase();
+      if (
+        lower.endsWith('.html') ||
+        lower.endsWith('.htm') ||
+        lower.endsWith('.txt') ||
+        lower.endsWith('.csv')
+      ) {
         fs.writeFileSync(path.join(RELATORIOS_DIR, safeName), Buffer.from(String(rf.content_base64), 'base64'));
         relatoriosRestaurados++;
       }
@@ -2479,7 +2560,13 @@ app.get('/api/admin/db/status', (req, res) => {
   if (fs.existsSync(RELATORIOS_DIR)) {
     const rFiles = fs
       .readdirSync(RELATORIOS_DIR)
-      .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+      .filter((f) => {
+        const lower = f.toLowerCase();
+        return (
+          (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt') || lower.endsWith('.csv')) &&
+          !f.startsWith('.tmp_')
+        );
+      });
     relatoriosHtmlCount = rFiles.length;
     for (const f of rFiles) {
       try {

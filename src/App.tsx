@@ -537,8 +537,8 @@ export default function App() {
           const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
           setUploadProgress(
             totalChunks > 1
-              ? `A transferir relatório Snap2HTML para relatorios/ (${pct}%)...`
-              : 'A transferir relatório Snap2HTML para relatorios/...'
+              ? `A transferir ficheiro para relatorios/ (${pct}%)...`
+              : 'A transferir ficheiro para relatorios/...'
           );
 
           const start = chunkIndex * chunkSize;
@@ -576,7 +576,7 @@ export default function App() {
           }
         }
 
-        setUploadProgress('A indexar ficheiros .TIF na base de dados SQLite...');
+        setUploadProgress('A indexar códigos de referência na base de dados SQLite...');
       }
 
       const url = editingDisco ? `/api/discos/${editingDisco.id}` : '/api/discos';
@@ -3500,11 +3500,11 @@ export default function App() {
                 }`}
               >
                 <label className="block text-xs font-semibold mb-1">
-                  Relatório do disco (Snap2HTML, .html / .htm) — Indexação Automática de Ficheiros .TIF
+                  Relatório ou Lista de Códigos (.html, .htm, .txt, .csv) — Indexação Automática
                 </label>
                 {editingDisco?.relatorio_path && (
                   <div className="text-xs text-slate-400 mb-2">
-                    Relatório atual em <span className="font-mono">relatorios/</span>:{' '}
+                    Ficheiro atual em <span className="font-mono">relatorios/</span>:{' '}
                     <a
                       href={`/relatorios/${editingDisco.relatorio_path}`}
                       target="_blank"
@@ -3513,19 +3513,22 @@ export default function App() {
                     >
                       {editingDisco.relatorio_path}
                     </a>{' '}
-                    ({editingDisco.indexed_tif_count} ficheiros .TIF indexados) — selecione outro ficheiro abaixo para
+                    ({editingDisco.indexed_tif_count} documentos/códigos indexados) — selecione outro ficheiro abaixo para
                     substituir e reindexar.
                   </div>
                 )}
                 <input
                   type="file"
-                  accept=".html,.htm"
+                  accept=".html,.htm,.txt,.csv"
                   onChange={(e) => setFormFile(e.target.files?.[0] || null)}
                   className="block w-full text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-500 cursor-pointer"
                 />
                 <p className="text-[11px] text-slate-400 mt-1.5">
-                  O ficheiro é gravado na pasta local <span className="font-mono">relatorios/</span> e todos os nomes de
-                  ficheiros (<span className="font-mono">.tif</span>, metadados) são extraídos e indexados
+                  Suporta relatórios <strong>Snap2HTML</strong> (<span className="font-mono">.html</span>,{' '}
+                  <span className="font-mono">.htm</span>) e ficheiros de texto/tabela (
+                  <span className="font-mono">.txt</span>, <span className="font-mono">.csv</span>) com códigos de
+                  referência linha a linha (ex: <span className="font-mono">PT-TT-NOT-CNCSC1-001-001-0081</span>). O ficheiro é
+                  guardado em <span className="font-mono">relatorios/</span> e os códigos são indexados
                   automaticamente na base de dados SQLite.
                 </p>
               </div>
@@ -3617,7 +3620,7 @@ export default function App() {
                       inspectMode === 'html' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Vista HTML Original
+                    Ficheiro Original
                   </button>
                 </div>
 
