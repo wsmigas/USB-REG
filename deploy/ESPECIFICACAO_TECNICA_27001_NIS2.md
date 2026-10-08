@@ -267,12 +267,15 @@ WantedBy=multi-user.target
 ```
 
 ### 6.2 Firewall Perimétrica Interna (UFW)
-Apenas as portas autorizadas na LAN interna da DGLAB:
+Apenas as portas e sub-redes autorizadas na rede interna da DGLAB:
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp comment 'SSH Admin DGLAB'
-sudo ufw allow from 10.0.0.0/8 to any port 3005 proto tcp comment 'RIDIS HTTP Porta 3005'
+sudo ufw allow from 10.0.0.0/22 to any port 3005
+sudo ufw allow from 10.0.4.0/24 to any port 3005
+sudo ufw allow from 172.29.0.0/24 to any port 3005
+sudo ufw allow from 192.168.111.0/24 to any port 3005
 sudo ufw enable
 ```
 
