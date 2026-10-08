@@ -1,8 +1,10 @@
 # ==============================================================================
 # RIDIS — Sistema de Gestão de Discos USB, Matrizes e Relatórios
 # UNIDADE DE SERVIÇO SYSTEMD COM SANDBOXING E ISOLAMENTO DE SEGURANÇA
+# Diretório de Instalação: /opt/app_usb/ (Ambiente Interno DGLAB)
+# Servidor Autónomo: Node.js / Express em porta 3005 (Sem Proxy / Sem Nginx)
 # Conformidade: ISO/IEC 27001:2022 (A.8.2, A.8.9) & Diretiva NIS 2 (Art. 21.º)
-# Localização recomendada no SO: /etc/systemd/system/ridis.service
+# Localização no SO: /etc/systemd/system/ridis.service
 # ==============================================================================
 
 [Unit]
@@ -14,27 +16,26 @@ Wants=network-online.target
 [Service]
 Type=simple
 
-# Princípio do Menor Privilégio: Execução sob utilizador de serviço sem privilégios de root
+# Princípio do Menor Privilégio: Utilizador dedicado sem privilégios de root
 User=ridis
 Group=ridis
 
-WorkingDirectory=/var/www/ridis
+# Diretório base homologado
+WorkingDirectory=/opt/app_usb
 Environment=NODE_ENV=production
 Environment=APP_PORT=3005
-EnvironmentFile=-/var/www/ridis/.env
+EnvironmentFile=-/opt/app_usb/.env
 
-# Comando de Execução (via Node.js nativo com suporte a tsx ou build compilado)
-ExecStart=/usr/bin/node /var/www/ridis/node_modules/.bin/tsx /var/www/ridis/server.ts
-# Em caso de build estático previamente compilado:
-# ExecStart=/usr/bin/node /var/www/ridis/server.js
+# Execução autónoma via Node.js nativo (servidor Express com Vite embutido)
+ExecStart=/usr/bin/node /opt/app_usb/node_modules/.bin/tsx /opt/app_usb/server.ts
 
-# Políticas de Continuidade de Negócio e Auto-Recuperação (NIS 2)
+# Continuidade de Negócio e Auto-Recuperação (NIS 2)
 Restart=always
 RestartSec=5s
 StartLimitIntervalSec=60s
 StartLimitBurst=5
 
-# Limites de Recursos de Sistema (Prevenção de Esgotamento e DoS)
+# Limites de Recursos de Sistema
 LimitNOFILE=65535
 TimeoutStopSec=30s
 
@@ -50,10 +51,10 @@ ProtectControlGroups=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictRealtime=true
 
-# Diretórios com permissão de escrita estrita (apenas base de dados, uploads e backups)
-ReadWritePaths=/var/www/ridis/gestao_discos.db /var/www/ridis/gestao_discos.db-wal /var/www/ridis/gestao_discos.db-shm /var/www/ridis/relatorios /var/www/ridis/backups
+# Diretórios com permissão de escrita estrita na base de dados, relatórios e backups
+ReadWritePaths=/opt/app_usb/gestao_discos.db /opt/app_usb/gestao_discos.db-wal /opt/app_usb/gestao_discos.db-shm /opt/app_usb/relatorios /opt/app_usb/backups
 
-# Logging para systemd-journald (Encaminhável para SIEM institucional)
+# Logging estruturado para systemd-journald
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=ridis-dglab

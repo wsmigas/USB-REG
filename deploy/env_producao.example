@@ -1,27 +1,28 @@
 # ==============================================================================
 # RIDIS — Sistema de Gestão de Discos USB e Preservação Digital (DGLAB)
 # CONFIGURAÇÃO DE VARIÁVEIS DE AMBIENTE DE PRODUÇÃO (.env)
-# Conformidade: ISO/IEC 27001:2022 (A.8.24, A.8.28) & Diretiva NIS 2
-# Permissões do ficheiro: chmod 600 /var/www/ridis/.env (Proprietário: ridis:ridis)
+# Diretório de Instalação: /opt/app_usb/ (Uso estrito em Intranet DGLAB)
+# Servidor Autónomo na Porta 3005 (Sem Proxy / Sem Nginx)
+# Conformidade: ISO/IEC 27001:2022 & Diretiva NIS 2
+# Permissões do ficheiro: chmod 600 /opt/app_usb/.env (Proprietário: ridis:ridis)
 # ==============================================================================
 
 # Ambiente de Execução
 NODE_ENV=production
 
-# Porta do Serviço Interno (O Nginx escuta 80/443 e faz proxy para esta porta)
+# Porta do Servidor Autónomo HTTP (escuta diretamente para a LAN interna)
 APP_PORT=3005
 
 # Limite de Tamanho de Uploads (em MB)
 MAX_UPLOAD_SIZE_MB=50
 
-# Chave / Segredo de Cifra de Sessões e Tokens (Substituir por 64 caracteres hexadecimais aleatórios)
-# Gerar com: openssl rand -hex 32
+# Chave / Segredo Criptográfico de Sessão
 SESSION_SECRET=e7b4f8a129d5c4e3a091284756bfcd32e847192837465abcde1234567890feda
 
 # Caminhos de Armazenamento no Sistema Operativo
-DB_PATH=/var/www/ridis/gestao_discos.db
-RELATORIOS_DIR=/var/www/ridis/relatorios
-BACKUPS_DIR=/var/www/ridis/backups
+DB_PATH=/opt/app_usb/gestao_discos.db
+RELATORIOS_DIR=/opt/app_usb/relatorios
+BACKUPS_DIR=/opt/app_usb/backups
 
-# Políticas de Backup e Retenção de Dados (Dias a manter)
+# Políticas de Backup e Retenção de Dados (Dias)
 BACKUP_RETENTION_DAYS=90
