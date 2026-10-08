@@ -1,4 +1,4 @@
-# ESPECIFICAÇÃO TÉCNICA DE IMPLANTAÇÃO E CONVERGÊNCIA NORMATIVA
+# ESPECIFICAÇÃO TÉCNICA DE ARQUITETURA E CONVERGÊNCIA NORMATIVA
 ## ISO/IEC 27001:2022 & DIRETIVA NIS 2 (UE 2022/2555)
 
 ---
@@ -7,116 +7,53 @@
 **Autor e Titular:** José Miguel Magalhães  
 **Organização Licenciada:** DGLAB — Direção-Geral do Livro, dos Arquivos e das Bibliotecas  
 **Âmbito de Utilização:** Exclusivo para Ambiente Interno / Intranet DGLAB  
-**Diretório Base de Instalação:** `/opt/app_usb/`  
-**Arquitetura de Rede:** Servidor Autónomo HTTP (Sem Proxy / Sem Nginx)  
-**Origem do Código:** Repositório Oficial GitHub  
-**Classificação:** RESTRITO / MÓDULO ADMINISTRAÇÃO BD  
-**Versão:** 2.0.0 (Revisão Técnica DGLAB)  
+**Diretório Base da Aplicação:** `/opt/app_usb/`  
+**Porta de Operação:** Exclusivamente **Porta 3005** (Servidor Autónomo HTTP sem Proxy / sem Nginx)  
+**Classificação do Documento:** RESTRITO / MÓDULO ADMINISTRAÇÃO BD  
+**Versão:** 3.0.0 (Especificação Estrutural e Arquitetura)  
 **Data:** Outubro de 2026  
 
 ---
 
 ## 0. Enquadramento e Resumo de Arquitetura
 
-O sistema RIDIS foi concebido como uma solução **autónoma e auto-contida** para execução restrita no perímetro interno (intranet/LAN) da DGLAB e dos Arquivos Distritais.
+O RIDIS é uma solução **autónoma e auto-suficiente** concebida para operação estrita na rede interna (LAN/intranet) da DGLAB e dos Arquivos Distritais.
 
-### 0.1 Premissas Fundamentais da Infraestrutura
-1. **Pasta de Instalação:** `/opt/app_usb/` — diretoria padronizada no sistema operativo para aplicações autónomas.
-2. **Sem Nginx / Sem Proxy:** A própria aplicação em Node.js / Express integra o seu servidor web HTTP nativo e o motor Vite, servindo diretamente as páginas, a API REST, tratando uploads volumosos (até 50MB) e gerindo sessões sem necessidade de Nginx, Apache ou qualquer proxy reverso.
-3. **Instalação via GitHub:** A entrega e implantação são efetuadas por clonagem direta do repositório Git, bastando instalar previamente os módulos base do sistema operativo.
-4. **Base de Dados Embutida:** SQLite 3 em modo WAL, armazenada localmente em `/opt/app_usb/gestao_discos.db`, garantindo alta performance e zero exposição de portas de base de dados na rede.
-5. **Convergência Normativa:** Alinhada com os controlos da ISO/IEC 27001:2022 (A.5.15, A.8.2, A.8.9, A.8.13, A.8.24, A.8.26) e exigências de resiliência e continuidade da Diretiva NIS 2 (Artigo 21.º).
-
----
-
-## 1. Módulos e Pacotes de Software Necessários Instalar Antes de Fazer o Clone
-
-Antes de efetuar o clone do repositório a partir do GitHub, devem ser instalados no servidor Linux os seguintes pacotes essenciais do sistema:
-
-### 1.1 Sistema Operativo Recomendado
-* **Distribuição:** Ubuntu Server 24.04 LTS ou Debian 12 (Bookworm) / RHEL 9.
-* **Requisitos Mínimos:** 2 vCPU, 4 GB de memória RAM, 50 GB de armazenamento (preferencialmente em partição com cifragem de disco LUKS).
-
-### 1.2 Pacotes do Sistema Operativo (Instalar Pré-Clone)
-Executar como `root` ou com `sudo`:
-
-```bash
-# 1. Atualização dos índices de repositórios do sistema
-sudo apt update && sudo apt upgrade -y
-
-# 2. Módulos fundamentais pré-requisito (Git, utilitários, compilador e ferramentas de segurança)
-sudo apt install -y \
-  git \
-  curl \
-  wget \
-  ca-certificates \
-  gnupg \
-  build-essential \
-  sqlite3 \
-  libsqlite3-dev \
-  ufw \
-  fail2ban \
-  logrotate \
-  rsyslog \
-  gzip
-```
-
-### 1.3 Instalação do Runtime Node.js (Versão 22 LTS)
-A aplicação necessita do **Node.js v22 LTS** devido ao suporte nativo ao motor `node:sqlite`:
-
-```bash
-# Configuração do repositório oficial NodeSource para Node.js v22.x LTS
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-
-# Instalação do runtime Node.js e do gestor de pacotes npm
-sudo apt install -y nodejs
-
-# Verificação das versões instaladas
-git --version    # Deve confirmar a presença do Git
-node -v          # Deve reportar v22.x.x
-npm -v           # Deve reportar v10.x.x ou superior
-```
+### 0.1 Premissas Arquiteturais Fundamentais
+1. **Diretório Homologado:** `/opt/app_usb/` — localização padrão no sistema Linux onde a aplicação, a base de dados e os relatórios residem.
+2. **Operação Exclusiva na Porta 3005:** A aplicação opera estritamente na porta TCP **3005**, sem suporte secundário à porta 3000 para evitar ambiguidades operacionais.
+3. **Servidor Autónomo (Sem Proxy / Sem Nginx):** O backend Node.js / Express integra nativamente o servidor HTTP e o serviço de ficheiros estáticos da SPA React, respondendo diretamente na porta 3005 aos navegadores da intranet da DGLAB. Não é necessário qualquer servidor web externo (Nginx, Apache) nem proxy reverso.
+4. **Nota sobre Instalação:** As instruções de instalação passo a passo do sistema operativo e do clone do repositório são fornecidas num documento externo dedicado. Este documento foca-se na especificação técnica de arquitetura, pacotes requeridos, base de dados, estrutura de ficheiros e segurança.
 
 ---
 
-## 2. Processo de Instalação por Clone do GitHub e Dependências
+## 1. Pacotes e Módulos de Software Requeridos
 
-Com os módulos pré-requisito instalados, o processo de implantação na pasta `/opt/app_usb/` decorre da seguinte forma:
+A infraestrutura do servidor requer os seguintes pacotes e módulos de suporte instalados no sistema operativo:
 
-```bash
-# 1. Criação do utilizador de serviço sem privilégios de login (Menor Privilégio - ISO 27001 A.8.2)
-sudo useradd -r -s /usr/sbin/nologin -d /opt/app_usb ridis
-
-# 2. Clonagem do repositório a partir do GitHub para a pasta homologada /opt/app_usb/
-sudo git clone https://github.com/dglab/ridis.git /opt/app_usb
-# (ou a partir do repositório Git interno da DGLAB)
-
-# 3. Entrar no diretório da aplicação e instalar dependências do projeto
-cd /opt/app_usb
-sudo npm install
-
-# 4. Configuração das variáveis de ambiente (.env)
-sudo cp /opt/app_usb/deploy/env_producao.example /opt/app_usb/.env
-
-# 5. Criação das pastas de suporte operacionais
-sudo mkdir -p /opt/app_usb/relatorios /opt/app_usb/backups
-
-# 6. Atribuição de permissões seguras
-sudo chown -R ridis:ridis /opt/app_usb
-sudo chmod 750 /opt/app_usb
-sudo chmod 600 /opt/app_usb/.env
-```
+* **Sistema Operativo Homologado:** Ubuntu Server 24.04 LTS ou Debian 12 (Bookworm) / RHEL 9 (64-bit).
+* **Runtime de Aplicação:** **Node.js v22 LTS** (com gestor de pacotes `npm`), necessário pelo suporte ao motor nativo `node:sqlite`.
+* **Ferramenta de Controlo de Versões:** `git` (utilizado para obtenção e atualização do código fonte do projeto).
+* **Motor e Utilitários de Base de Dados:** `sqlite3` e biblioteca de desenvolvimento `libsqlite3-dev`.
+* **Utilitários do Sistema e Segurança:** `build-essential`, `ca-certificates`, `curl`, `ufw` (firewall perimétrica interna), `fail2ban`, `logrotate`, `rsyslog`, `gzip`.
+* **Módulos da Aplicação (npm):**
+  * `express` (v4.21+) — Servidor HTTP autónomo e roteamento da API REST;
+  * `multer` (v2.4+) — Processamento de uploads de relatórios de ficheiros volumosos (até 50MB);
+  * `react` / `react-dom` (v19) — Interface gráfica de utilizador SPA reativa;
+  * `vite` & `@tailwindcss/vite` — Servidor e empacotador de ativos frontend;
+  * `pdfkit` — Motor de geração vetorial de relatórios técnicos e documentos de conformidade;
+  * `tsx` / `typescript` — Compilador e executor de TypeScript em runtime de alta performance.
 
 ---
 
-## 3. Base de Dados a Instalar e Script para Criar a BD
+## 2. Base de Dados: Especificação e Script DDL de Criação
 
-### 3.1 Motor de Base de Dados
+### 2.1 Especificação da Base de Dados
 * **Motor:** **SQLite 3** com modo transacional **WAL (Write-Ahead Logging)** e `PRAGMA synchronous = NORMAL;`.
-* **Ficheiro da BD:** `/opt/app_usb/gestao_discos.db`
-* **Vantagens de Segurança (ISO 27001 A.8.20 / NIS 2):** Não expõe portas de escuta na rede, não requer daemon adicional, previne ataques remotos de rede e suporta transações concorrentes de leitura e escrita com elevada performance.
+* **Localização Exata:** `/opt/app_usb/gestao_discos.db`
+* **Vantagens de Segurança (ISO 27001 A.8.20 / NIS 2):** Não abre portas de rede no servidor, garantindo isolamento total face à rede externa e prevenindo ataques remotos de injeção direta.
 
-### 3.2 Script SQL de Criação (`/opt/app_usb/deploy/schema_criacao_bd.sql`)
+### 2.2 Script SQL de Criação e Inicialização (`/opt/app_usb/deploy/schema_criacao_bd.sql`)
 
 ```sql
 -- Ativação de Modos de Segurança, Integridade e Concorrência
@@ -125,7 +62,7 @@ PRAGMA synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
 PRAGMA temp_store = MEMORY;
 
--- 1. Tabela de Discos USB (Inventário Físico/Lógico de Suportes de Preservação)
+-- 1. Tabela de Discos USB (Inventário Físico/Lógico de Preservação)
 CREATE TABLE IF NOT EXISTS discos_usb (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   arquivo TEXT NOT NULL,                         -- ANTT, ADAVR, ADBJA, etc.
@@ -146,11 +83,11 @@ CREATE TABLE IF NOT EXISTS discos_usb (
   relatorio_path TEXT
 );
 
--- 2. Tabela de Utilizadores e Controlo de Acesso (RBAC)
+-- 2. Tabela de Utilizadores e Controlo de Acesso (RBAC - ISO 27001 A.5.15)
 CREATE TABLE IF NOT EXISTS usuarios (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   username TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,                   -- Hash SHA-256 com salt ou scrypt
+  password_hash TEXT NOT NULL,                   -- SHA-256 com salt ou scrypt
   is_admin INTEGER DEFAULT 0,
   role TEXT DEFAULT 'operador',                  -- 'admin', 'operador', 'consulta'
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -166,7 +103,7 @@ CREATE TABLE IF NOT EXISTS relatorio_ficheiros (
   FOREIGN KEY (disco_id) REFERENCES discos_usb(id) ON DELETE CASCADE
 );
 
--- 4. Índices para Otimização de Consultas e Prevenção de Exaustão de CPU
+-- 4. Índices Otimizados para Alto Rendimento
 CREATE INDEX IF NOT EXISTS idx_discos_id_disco ON discos_usb(id_disco);
 CREATE INDEX IF NOT EXISTS idx_discos_arquivo ON discos_usb(arquivo);
 CREATE INDEX IF NOT EXISTS idx_discos_projeto ON discos_usb(projeto);
@@ -181,90 +118,118 @@ VALUES ('admin', '90b1e42cba273a0a38bdfdf3eef250785ff21db2636a0d4db0db08c7c9ec9f
 PRAGMA integrity_check;
 ```
 
-### 3.3 Execução do Script
-```bash
-# Criação direta da BD a partir do script
-sqlite3 /opt/app_usb/gestao_discos.db < /opt/app_usb/deploy/schema_criacao_bd.sql
+---
 
-# Permissões restritas de leitura/escrita para o serviço
-sudo chown ridis:ridis /opt/app_usb/gestao_discos.db*
-sudo chmod 660 /opt/app_usb/gestao_discos.db*
-```
+## 3. Servidor Web: Operação Exclusiva na Porta 3005 (Sem Proxy)
+
+A aplicação atua como **servidor web HTTP autónomo**:
+* **Porta Exclusiva:** Escuta apenas na porta TCP **3005** (`http://<ip-do-servidor>:3005/`).
+* **Sem Porta 3000:** Qualquer menção ou escuta na porta 3000 foi removida, garantindo consistência na rede da DGLAB.
+* **Sem Necessidade de Nginx / Apache:**
+  1. O motor Express fornece diretamente os ficheiros estáticos e páginas da interface SPA;
+  2. Fornece os endpoints REST de API para inventário, pesquisa e administração;
+  3. Gere o upload de relatórios com limite ajustado para 50MB;
+  4. Reduz a superfície de ataque, elimina serviços desnecessários e simplifica a manutenção interna.
 
 ---
 
-## 4. Servidor Web: Arquitetura Autónoma (Sem Nginx / Sem Proxy)
+## 4. Estrutura Completa de Diretórios e Ficheiros em `/opt/app_usb/`
 
-A aplicação RIDIS é **totalmente auto-suficiente**:
-* **Servidor HTTP Embutido:** O backend em Express atua diretamente como servidor HTTP de aplicação, escutando nativamente na porta configurada (padrão **3005** ou **3000**).
-* **Sem Necessidade de Nginx ou Apache:** A própria aplicação:
-  1. Serve os ficheiros estáticos e assets da interface gráfica React compilada com compressão gzip/deflate;
-  2. Implementa o roteamento dinâmico da API REST;
-  3. Trata uploads de ficheiros volumosos (Snap2HTML / CSV / TXT até 50MB) via `multer` com sanitização estrita de caminhos e nomes de ficheiros;
-  4. Opera diretamente dentro do perímetro seguro da intranet da DGLAB, dispensando qualquer camada adicional de reverse proxy.
-
----
-
-## 5. Conjunto de Ficheiros de Cada Aplicação e Permissões POSIX
-
-A árvore completa de ficheiros instalada em `/opt/app_usb/` e o regime de permissões do sistema de ficheiros (Princípio do Menor Privilégio - ISO 27001 A.8.2):
+Abaixo apresenta-se a árvore estrutural da aplicação, identificando cada ficheiro, a sua localização exata e função:
 
 ```
 /opt/app_usb/
-├── server.ts                   # Servidor de aplicação backend Express, API REST e SQLite
-├── package.json                # Manifesto de dependências instaladas via npm
-├── tsconfig.json               # Configurações do TypeScript
-├── vite.config.ts              # Configuração do Vite e plugins Tailwind
-├── index.html                  # Ponto de entrada HTML da SPA
-├── .env                        # Variáveis de ambiente (PORT=3005, segredos locais)
-├── LICENSE                     # Licença Proprietária Restrita exclusiva DGLAB
-├── LICENCA.md                  # Termo formal de Direitos de Autor (José Miguel Magalhães)
-├── gestao_discos.db            # Base de dados SQLite operacional (WAL mode)
-├── gestao_discos.db-wal        # Ficheiro Write-Ahead Log temporário
-├── gestao_discos.db-shm        # Ficheiro Shared Memory de indexação
 │
-├── deploy/                     # Scripts de implantação e documentação técnica restrita
-│   ├── schema_criacao_bd.sql   # Script DDL de criação e inicialização da base de dados
-│   ├── ridis.service           # Unidade systemd com sandboxing de segurança
-│   ├── env_producao.example    # Modelo de variáveis de ambiente
-│   └── ESPECIFICACAO_TECNICA_27001_NIS2.md # Este documento de especificação técnica
+├── server.ts
+│   └── Localização: /opt/app_usb/server.ts
+│   └── Função: Servidor backend autónomo Express, API REST, motor SQLite nativo e Vite middleware na porta 3005.
+│   └── Permissão: 640 (ridis:ridis)
 │
-├── relatorios/                 # Diretório de armazenamento de relatórios de discos carregados
-├── backups/                    # Diretório local de cópias de segurança comprimidas (.db.gz)
-├── public/                     # Ficheiros estáticos e PDF técnico de conformidade
-└── src/                        # Código-fonte da interface de utilizador (React TypeScript)
-    ├── App.tsx                 # Interface: inventário, importações, RBAC e módulo Admin BD
-    ├── types.ts                # Interfaces e tipos de dados TypeScript
-    └── main.tsx                # Bootstrap da aplicação React
-```
-
-### 5.1 Permissões POSIX Recomendadas
-
-| Ficheiro / Diretório | Proprietário | Permissão | Justificação de Segurança (ISO 27001) |
-| :--- | :--- | :--- | :--- |
-| `/opt/app_usb/` (Raiz) | `ridis:ridis` | `750` | Apenas o utilizador de serviço e grupo acedem à diretoria |
-| `server.ts`, `src/`, `deploy/` | `ridis:ridis` | `640` / `750` | Código apenas para leitura pelo processo, prevenindo adulteração |
-| `gestao_discos.db*` | `ridis:ridis` | `660` | Leitura e escrita exclusivas do serviço |
-| `relatorios/` | `ridis:ridis` | `770` | Receção controlada de uploads de relatórios |
-| `backups/` | `ridis:ridis` | `750` | Diretório de salvaguarda de backups protegidos |
-| `.env` | `ridis:ridis` | `600` | Segredos de sessão e portas protegidos contra leitura externa |
-
-Comandos de aplicação:
-```bash
-sudo chown -R ridis:ridis /opt/app_usb
-sudo find /opt/app_usb -type d -exec chmod 750 {} +
-sudo find /opt/app_usb -type f -exec chmod 640 {} +
-sudo chmod 770 /opt/app_usb/relatorios /opt/app_usb/backups
-sudo chmod 660 /opt/app_usb/gestao_discos.db*
-sudo chmod 600 /opt/app_usb/.env
+├── gestao_discos.db (e ficheiros auxiliares .db-wal e .db-shm)
+│   └── Localização: /opt/app_usb/gestao_discos.db
+│   └── Função: Base de dados relacional SQLite operacional contendo os discos, ficheiros indexados e contas RBAC.
+│   └── Permissão: 660 (ridis:ridis)
+│
+├── .env
+│   └── Localização: /opt/app_usb/.env
+│   └── Função: Ficheiro de configuração local com variáveis de ambiente (APP_PORT=3005, caminhos de dados).
+│   └── Permissão: 600 (ridis:ridis)
+│
+├── package.json & tsconfig.json
+│   └── Localização: /opt/app_usb/package.json | /opt/app_usb/tsconfig.json
+│   └── Função: Manifesto de dependências do Node.js e configurações do compilador TypeScript.
+│   └── Permissão: 640 (ridis:ridis)
+│
+├── vite.config.ts & index.html
+│   └── Localização: /opt/app_usb/vite.config.ts | /opt/app_usb/index.html
+│   └── Função: Ponto de entrada HTML da SPA e configuração de empacotamento com porta 3005.
+│   └── Permissão: 640 (ridis:ridis)
+│
+├── LICENSE & LICENCA.md
+│   └── Localização: /opt/app_usb/LICENSE | /opt/app_usb/LICENCA.md
+│   └── Função: Termos de Direitos de Autor e Licenciamento Proprietário exclusivo para a DGLAB (José Miguel Magalhães).
+│   └── Permissão: 644 (ridis:ridis)
+│
+├── relatorios/  ★★ PASTA CENTRAL DE RELATÓRIOS DE VALIDAÇÃO ★★
+│   └── Localização: /opt/app_usb/relatorios/
+│   └── Função: Diretório central obrigatório onde mais tarde os ficheiros de relatório dos discos USB
+│       (formatos Snap2HTML .html, relatórios .txt e listagens .csv) terão que ser copiados/alojados
+│       pelos técnicos e operadores para que a aplicação possa proceder à sua leitura, análise,
+│       extração de matrizes TIF e associação automática aos respetivos discos inventariados.
+│   └── Permissão: 770 (ridis:ridis) — permitindo escrita por operadores autorizados e leitura total pelo RIDIS.
+│
+├── backups/
+│   └── Localização: /opt/app_usb/backups/
+│   └── Função: Diretório reservado para armazenamento das cópias de segurança automáticas (.db.gz).
+│   └── Permissão: 750 (ridis:ridis)
+│
+├── deploy/
+│   └── Localização: /opt/app_usb/deploy/
+│   └── Conteúdo:
+│       ├── schema_criacao_bd.sql    # Script SQL executável de criação da base de dados SQLite
+│       ├── ridis.service            # Ficheiro de unidade systemd homologado para /opt/app_usb/
+│       ├── env_producao.example     # Modelo de variáveis de ambiente de produção
+│       └── ESPECIFICACAO_TECNICA_27001_NIS2.md # Este documento de especificação técnica
+│   └── Permissão: 750 (ridis:ridis)
+│
+├── public/
+│   └── Localização: /opt/app_usb/public/
+│   └── Conteúdo: Ativos estáticos públicos e PDF oficial de especificação técnica.
+│   └── Permissão: 750 (ridis:ridis)
+│
+└── src/
+    └── Localização: /opt/app_usb/src/
+    └── Conteúdo:
+        ├── App.tsx       # Componente principal React: inventário, importações e módulo Administração BD
+        ├── types.ts      # Definições de tipos e interfaces TypeScript (DiscoUsb, Usuario, etc.)
+        ├── main.tsx      # Bootstrap da aplicação no DOM do navegador
+        └── index.css     # Estilos globais e integração Tailwind CSS
+    └── Permissão: 750 (ridis:ridis)
 ```
 
 ---
 
-## 6. Configurações a Aplicar
+## 5. Destaque Operacional: A Pasta `/opt/app_usb/relatorios/`
+
+A pasta **`/opt/app_usb/relatorios/`** desempenha um papel crítico na cadeia de custódia e preservação digital:
+
+1. **Destino Obrigatório dos Relatórios Externos:** É nesta pasta que os técnicos de digitalização e administradores de arquivo devem copiar (via cópia direta de ficheiros, SCP, SFTP ou partilha de rede) os relatórios gerados por ferramentas como Snap2HTML (`.html`), ficheiros de texto (`.txt`) ou ficheiros de dados (`.csv`).
+2. **Associação Automática aos Discos:** Quando um relatório se encontra em `/opt/app_usb/relatorios/`, a aplicação RIDIS permite:
+   * Detetar automaticamente os ficheiros presentes na pasta;
+   * Efetuar o parsing rápido de árvores de diretórios com até 15 milhões de ficheiros;
+   * Extrair os Códigos de Referência dos documentos (ex: `PT-TT-JC-A-005-0023`);
+   * Ligar com 1 clique o relatório ao registo correspondente na tabela `discos_usb`.
+3. **Recomendações de Permissões:**
+   * Diretório: `chmod 770 /opt/app_usb/relatorios`
+   * Utilizador/Grupo: `ridis:ridis`
+   * Se for partilhada via rede interna (ex: Samba), os utilizadores do grupo `ridis` devem ter permissões de escrita para permitir a cópia direta dos relatórios.
+
+---
+
+## 6. Configurações a Aplicar: Systemd e Segurança Interna
 
 ### 6.1 Unidade de Serviço Systemd (`/etc/systemd/system/ridis.service`)
-Permite arranque automático no boot do servidor, reinício automático em caso de falha (NIS 2) e isolamento rigoroso por sandboxing (ISO 27001 A.8.9):
+Configuração que garante arranque automático no boot e isolamento estrito de processos (Princípio do Menor Privilégio - ISO 27001 A.8.9):
 
 ```ini
 [Unit]
@@ -276,13 +241,15 @@ Type=simple
 User=ridis
 Group=ridis
 WorkingDirectory=/opt/app_usb
+Environment=NODE_ENV=production
+Environment=APP_PORT=3005
 EnvironmentFile=-/opt/app_usb/.env
 ExecStart=/usr/bin/node /opt/app_usb/node_modules/.bin/tsx /opt/app_usb/server.ts
 
 Restart=always
 RestartSec=5s
 
-# Sandboxing de Segurança ISO/IEC 27001 A.8.9
+# Sandboxing ISO/IEC 27001 A.8.9
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
@@ -299,27 +266,17 @@ SyslogIdentifier=ridis-dglab
 WantedBy=multi-user.target
 ```
 
-Ativação do serviço:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now ridis.service
-sudo systemctl status ridis.service
-```
-
 ### 6.2 Firewall Perimétrica Interna (UFW)
-Apenas as portas autorizadas na LAN interna da DGLAB devem responder:
-
+Apenas as portas autorizadas na LAN interna da DGLAB:
 ```bash
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-# Acesso SSH restrito à rede de administração
 sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp comment 'SSH Admin DGLAB'
-# Acesso direto à aplicação RIDIS na porta 3005 para a intranet
-sudo ufw allow from 10.0.0.0/8 to any port 3005 proto tcp comment 'RIDIS Intranet DGLAB'
+sudo ufw allow from 10.0.0.0/8 to any port 3005 proto tcp comment 'RIDIS HTTP Porta 3005'
 sudo ufw enable
 ```
 
-### 6.3 Política de Backup Automatizado (NIS 2 / ISO 27001 A.8.13)
+### 6.3 Rotina de Backup da Base de Dados (NIS 2 / ISO 27001 A.8.13)
 Cronjob em `/etc/cron.d/ridis-backup`:
 ```cron
 0 2 * * * ridis /usr/bin/sqlite3 /opt/app_usb/gestao_discos.db ".backup '/opt/app_usb/backups/backup_auto_$(date +\%Y\%m\%d_\%H\%M\%S).db'" && gzip /opt/app_usb/backups/backup_auto_*.db && find /opt/app_usb/backups -name "*.db.gz" -mtime +90 -delete

@@ -1,7 +1,8 @@
 /**
  * RIDIS — Gerador de Documento Técnico PDF
  * Convergência ISO/IEC 27001:2022 & Diretiva NIS 2 (UE 2022/2555)
- * Atualizado: Instalação em /opt/app_usb/ | Sem Nginx/Sem Proxy | Clone GitHub
+ * Versão 3.0: Diretório /opt/app_usb/ | Apenas Porta 3005 | Sem Nginx/Sem Proxy | Sem Instruções de Instalação
+ * Foco: Estrutura Completa de Ficheiros, Pasta 'relatorios' e Script DDL da BD
  * Autor: José Miguel Magalhães | DGLAB (2026)
  */
 
@@ -16,10 +17,10 @@ export function generateCompliancePDF(outputPath) {
       margins: { top: 40, bottom: 45, left: 45, right: 45 },
       bufferPages: true,
       info: {
-        Title: 'RIDIS — Especificação Técnica de Implantação e Convergência 27001 / NIS II',
+        Title: 'RIDIS — Especificação Técnica de Arquitetura e Convergência 27001 / NIS II',
         Author: 'José Miguel Magalhães',
-        Subject: 'Guia Técnico de Implantação em /opt/app_usb/ via GitHub (Servidor Autónomo Sem Proxy)',
-        Keywords: 'ISO 27001, NIS 2, DGLAB, RIDIS, SQLite, Express, systemd, /opt/app_usb/',
+        Subject: 'Estrutura de Ficheiros em /opt/app_usb/, Pasta relatorios e Base de Dados (Porta 3005)',
+        Keywords: 'ISO 27001, NIS 2, DGLAB, RIDIS, SQLite, relatorios, /opt/app_usb/, 3005',
         Creator: 'DGLAB - Direção-Geral do Livro, dos Arquivos e das Bibliotecas',
       },
     });
@@ -36,26 +37,26 @@ export function generateCompliancePDF(outputPath) {
     const BORDER_COLOR = '#cbd5e1';  // Slate 300
     const SUCCESS_COLOR = '#065f46'; // Emerald 800
 
-    function drawHeader(title) {
+    function drawHeader() {
       doc.save();
       doc.fontSize(8).fillColor(MUTED_COLOR).text('DGLAB · DIREÇÃO-GERAL DO LIVRO, DOS ARQUIVOS E DAS BIBLIOTECAS', 45, 25);
-      doc.fontSize(8).fillColor(ACCENT_COLOR).text('RIDIS — ESPECIFICAÇÃO TÉCNICA (/opt/app_usb/)', 45, 25, { align: 'right' });
+      doc.fontSize(8).fillColor(ACCENT_COLOR).text('RIDIS — ESPECIFICAÇÃO TÉCNICA (PORTA 3005 · /opt/app_usb/)', 45, 25, { align: 'right' });
       doc.moveTo(45, 36).lineTo(550, 36).strokeColor(BORDER_COLOR).lineWidth(0.8).stroke();
       doc.restore();
     }
 
     function drawSectionTitle(number, title) {
-      doc.moveDown(0.7);
+      doc.moveDown(0.65);
       const y = doc.y;
       doc.rect(45, y, 4, 18).fill(ACCENT_COLOR);
-      doc.fontSize(12).font('Helvetica-Bold').fillColor(PRIMARY_COLOR).text(`${number}. ${title}`, 55, y + 2);
+      doc.fontSize(11.5).font('Helvetica-Bold').fillColor(PRIMARY_COLOR).text(`${number}. ${title}`, 55, y + 2);
       doc.moveDown(0.5);
     }
 
     function drawSubTitle(title) {
-      doc.moveDown(0.4);
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(SECONDARY_COLOR).text(title, 45);
-      doc.moveDown(0.3);
+      doc.moveDown(0.35);
+      doc.fontSize(9.5).font('Helvetica-Bold').fillColor(SECONDARY_COLOR).text(title, 45);
+      doc.moveDown(0.25);
     }
 
     function drawParagraph(text) {
@@ -87,7 +88,7 @@ export function generateCompliancePDF(outputPath) {
     }
 
     // =========================================================================
-    // PÁGINA 1: CAPA & PREMISSAS ARQUITETURAIS (/opt/app_usb/ - SEM PROXY)
+    // PÁGINA 1: CAPA & PREMISSAS ARQUITETURAIS (PORTA 3005 · /opt/app_usb/)
     // =========================================================================
     drawHeader();
     doc.y = 52;
@@ -96,16 +97,16 @@ export function generateCompliancePDF(outputPath) {
     doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#1e40af')
       .text('DOCUMENTO RESTRITO — MÓDULO ADMINISTRAÇÃO BD (USO INTERNO DGLAB)', 45, doc.y - 18, { align: 'center' });
 
-    doc.moveDown(1.4);
+    doc.moveDown(1.3);
     doc.fontSize(18).font('Helvetica-Bold').fillColor(PRIMARY_COLOR)
-      .text('ESPECIFICAÇÃO TÉCNICA DE IMPLANTAÇÃO', { align: 'center' });
+      .text('ESPECIFICAÇÃO TÉCNICA DE ARQUITETURA', { align: 'center' });
     doc.moveDown(0.2);
     doc.fontSize(12).font('Helvetica-Bold').fillColor(ACCENT_COLOR)
-      .text('Convergência ISO/IEC 27001:2022 & Diretiva NIS 2 (UE 2022/2555)', { align: 'center' });
+      .text('Convergência com ISO/IEC 27001:2022 & Diretiva NIS 2 (UE 2022/2555)', { align: 'center' });
 
     doc.moveDown(0.4);
     doc.fontSize(9.5).font('Helvetica-Oblique').fillColor(MUTED_COLOR)
-      .text('Servidor Autónomo HTTP na Intranet DGLAB · Diretório /opt/app_usb/ · Instalação via GitHub', { align: 'center' });
+      .text('Servidor Autónomo na Porta 3005 · Diretório /opt/app_usb/ · Pasta relatorios/ Centralizada', { align: 'center' });
 
     doc.moveDown(0.6);
     // Caixa de Metadados
@@ -113,37 +114,37 @@ export function generateCompliancePDF(outputPath) {
     doc.roundedRect(45, metaY, 505, 68, 4).fillAndStroke('#f8fafc', BORDER_COLOR);
     doc.fontSize(8).font('Helvetica-Bold').fillColor(PRIMARY_COLOR);
     doc.text('Diretório de Instalação:', 55, metaY + 8);
-    doc.text('Arquitetura de Rede:', 55, metaY + 22);
-    doc.text('Origem do Código:', 55, metaY + 36);
+    doc.text('Porta de Operação:', 55, metaY + 22);
+    doc.text('Arquitetura de Rede:', 55, metaY + 36);
     doc.text('Autor / Responsável:', 55, metaY + 50);
 
     doc.font('Helvetica').fillColor(TEXT_COLOR);
-    doc.text('/opt/app_usb/ (Diretório homologado no servidor)', 185, metaY + 8);
-    doc.text('Servidor Autónomo Node.js/Express na porta 3005 (Sem Proxy / Sem Nginx)', 185, metaY + 22);
-    doc.text('Repositório GitHub (Clone direto após instalação de módulos pré-requisito)', 185, metaY + 36);
-    doc.text('José Miguel Magalhães · DGLAB / Serviços Centrais (Versão 2.0.0 - Outubro 2026)', 185, metaY + 50);
+    doc.text('/opt/app_usb/ (Diretório base homologado)', 185, metaY + 8);
+    doc.text('Exclusivamente Porta 3005 (Sem suporte à porta 3000)', 185, metaY + 22);
+    doc.text('Servidor Autónomo Node.js/Express na Intranet DGLAB (Sem Proxy / Sem Nginx)', 185, metaY + 36);
+    doc.text('José Miguel Magalhães · DGLAB / Serviços Centrais (Versão 3.0.0 - Outubro 2026)', 185, metaY + 50);
 
     doc.y = metaY + 78;
 
-    drawSectionTitle('0', 'Premissas de Implantação e Convergência Normativa');
+    drawSectionTitle('0', 'Premissas e Âmbito da Especificação');
     drawParagraph(
-      'A aplicação RIDIS destina-se a operação estrita dentro da infraestrutura interna da DGLAB (LAN/intranet). Por decisão arquitetural de simplificação e segurança por conceção (Security by Design), a aplicação opera como um servidor autónomo auto-suficiente: não requer proxy reverso nem Nginx, pois o próprio runtime Express/Node.js serve diretamente a interface web e a API, com limites de upload ajustados a 50MB e suporte de persistência SQLite WAL local.'
+      'A presente especificação técnica define a arquitetura, modelo de dados, localização física dos ficheiros e parâmetros de segurança da aplicação RIDIS, em convergência estrita com as normas ISO/IEC 27001:2022 e a Diretiva NIS 2 (UE 2022/2555). As instruções de instalação passo a passo do sistema operativo e de ferramentas foram deliberadamente remetidas para um documento externo dedicado, centrando-se este documento na topologia técnica, na base de dados, na estrutura de pastas em /opt/app_usb/ e no papel central da pasta "relatorios/".'
     );
 
     // Tabela resumida de conformidade
     const tableY = doc.y + 4;
     doc.rect(45, tableY, 505, 17).fill(PRIMARY_COLOR);
     doc.fontSize(8).font('Helvetica-Bold').fillColor('#ffffff');
-    doc.text('Requisito Técnico', 52, tableY + 5);
+    doc.text('Parâmetro Técnico', 52, tableY + 5);
     doc.text('Convergência ISO 27001 / NIS 2', 170, tableY + 5);
     doc.text('Implementação Técnica no RIDIS', 330, tableY + 5);
 
     const rows = [
-      ['Diretório Homologado', 'ISO A.8.9 (Configuração do SO)', 'Instalação estruturada em /opt/app_usb/ sob utilizador ridis:ridis.'],
-      ['Sem Proxy / Sem Nginx', 'ISO A.8.20 (Redução de Superfície)', 'Servidor HTTP nativo na porta 3005 direto para a LAN interna da DGLAB.'],
-      ['Clone via GitHub', 'NIS 2 Art. 21(2)(d) (Cadeia de Fornecimento)', 'Clonagem controlada com dependências fixas em package.json e npm install.'],
+      ['Diretório Homologado', 'ISO A.8.9 (Gestão de Configuração)', 'Instalação unificada e estruturada sob /opt/app_usb/.'],
+      ['Porta Única (3005)', 'ISO A.8.20 (Segurança da Rede)', 'Operação exclusiva na porta 3005; eliminação da porta 3000.'],
+      ['Servidor Autónomo', 'ISO A.8.20 (Redução de Superfície)', 'Node.js Express atua diretamente na LAN (sem proxy / sem Nginx).'],
+      ['Pasta relatorios/', 'ISO A.8.10 / NIS 2 (Integridade)', 'Diretório centralizado para cópia e indexação dos relatórios .html/.csv.'],
       ['Base de Dados Local', 'ISO A.8.24 / NIS 2 Art. 21(2)(c)', 'SQLite 3 WAL em /opt/app_usb/gestao_discos.db (sem portas expostas).'],
-      ['Isolamento de Processo', 'ISO A.8.2 / A.8.9 (Menor Privilégio)', 'Unidade systemd com sandboxing rigoroso e execução sem privilégios root.'],
     ];
 
     let currentY = tableY + 17;
@@ -158,90 +159,33 @@ export function generateCompliancePDF(outputPath) {
 
     doc.y = currentY + 8;
     drawParagraph(
-      'Este documento está restrito ao módulo de Administração de BD da aplicação, contendo os comandos e configurações exatas para o administrador de sistemas da DGLAB.'
+      'Este documento está restrito ao módulo de Administração de BD da aplicação, contendo os elementos técnicos exatos de operação e custódia documental.'
     );
 
     // =========================================================================
-    // PÁGINA 2: MÓDULOS NECESSÁRIOS INSTALAR ANTES DO CLONE GITHUB
-    // =========================================================================
-    doc.addPage();
-    drawHeader();
-    doc.y = 48;
-
-    drawSectionTitle('1', 'Módulos Necessários Instalar Antes de Fazer o Clone');
-    drawParagraph(
-      'A instalação da aplicação é efetuada por clonagem do repositório a partir do GitHub. Por conseguinte, antes de executar o comando git clone, é necessário preparar o sistema operativo Linux instalando os seguintes pacotes e módulos pré-requisito:'
-    );
-
-    drawSubTitle('1.1 Sistema Operativo Recomendado');
-    drawParagraph(
-      '• Distribuição Homologada: Ubuntu Server 24.04 LTS ou Debian 12 (Bookworm) / RHEL 9.\n' +
-      '• Recursos Mínimos: 2 vCPUs, 4 GB de memória RAM e 50 GB de armazenamento.\n' +
-      '• Criar o utilizador de serviço dedicado "ridis" (sem shell interativo): sudo useradd -r -s /usr/sbin/nologin -d /opt/app_usb ridis'
-    );
-
-    drawSubTitle('1.2 Comandos de Instalação de Módulos do Sistema (APT)');
-    drawParagraph(
-      'Instalar a ferramenta Git (para clonagem), utilitários de compilação, motor SQLite e ferramentas de segurança:'
-    );
-    drawCodeBox(
-      '# 1. Atualizar repositórios do sistema\n' +
-      'sudo apt update && sudo apt upgrade -y\n\n' +
-      '# 2. Instalar módulos essenciais do SO (pré-requisitos antes do clone)\n' +
-      'sudo apt install -y git curl wget ca-certificates gnupg build-essential \\\n' +
-      '  sqlite3 libsqlite3-dev ufw fail2ban logrotate rsyslog gzip openssl'
-    );
-
-    drawSubTitle('1.3 Instalação do Runtime Node.js 22 LTS (Nativo com node:sqlite)');
-    drawParagraph(
-      'A aplicação utiliza o motor integrado de base de dados node:sqlite, o que requer obrigatoriamente a versão Node.js v22 LTS:'
-    );
-    drawCodeBox(
-      '# Configurar repositório NodeSource para Node.js v22.x LTS e instalar\n' +
-      'curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -\n' +
-      'sudo apt install -y nodejs\n\n' +
-      '# Validar ferramentas instaladas antes do clone\n' +
-      'git --version   # Confirma presença do Git\n' +
-      'node -v         # Deve reportar v22.x.x\n' +
-      'npm -v          # Deve reportar v10.x.x ou superior'
-    );
-
-    drawSubTitle('1.4 Procedimento de Clonagem para /opt/app_usb/ e Instalação npm');
-    drawParagraph(
-      'Após a instalação dos módulos acima, o clone é executado diretamente para a diretoria /opt/app_usb/:'
-    );
-    drawCodeBox(
-      '# 1. Clonar o repositório GitHub para a pasta homologada /opt/app_usb/\n' +
-      'sudo git clone https://github.com/dglab/ridis.git /opt/app_usb\n\n' +
-      '# 2. Entrar na pasta e instalar as dependências declaradas em package.json\n' +
-      'cd /opt/app_usb\n' +
-      'sudo npm install\n\n' +
-      '# 3. Criar pastas operacionais e configurar variáveis de ambiente\n' +
-      'sudo mkdir -p /opt/app_usb/relatorios /opt/app_usb/backups\n' +
-      'sudo cp /opt/app_usb/deploy/env_producao.example /opt/app_usb/.env\n' +
-      'sudo chown -R ridis:ridis /opt/app_usb'
-    );
-
-    // =========================================================================
-    // PÁGINA 3: BASE DE DADOS A INSTALAR E SCRIPT DDL
+    // PÁGINA 2: ESPECIFICAÇÃO DE PACOTES & BASE DE DADOS COM SCRIPT DDL
     // =========================================================================
     doc.addPage();
     drawHeader();
     doc.y = 48;
 
-    drawSectionTitle('2', 'Base de Dados a Instalar e Script de Criação');
+    drawSectionTitle('1', 'Pacotes e Módulos de Software Requeridos');
     drawParagraph(
-      'A base de dados adotada é o SQLite 3 local, residindo exclusivamente em /opt/app_usb/gestao_discos.db. A utilização de SQLite WAL elimina portas de rede abertas no servidor, prevenindo injeções e ataques perimétricos no âmbito da ISO/IEC 27001 A.8.20.'
+      'A aplicação assenta numa arquitetura minimalista sem dependências externas de nuvem, requerendo no sistema operativo:'
+    );
+    drawParagraph(
+      '• Sistema Operativo: Ubuntu Server 24.04 LTS ou Debian 12 (Bookworm) / RHEL 9 (x86_64).\n' +
+      '• Runtime Node.js: Versão 22 LTS (com gestor npm), obrigatório pelo suporte ao motor nativo node:sqlite.\n' +
+      '• Motor de Base de Dados: SQLite 3 e respetivas bibliotecas de sistema (libsqlite3-dev).\n' +
+      '• Controlo de Versões & Utilitários: Git, build-essential, curl, ufw, fail2ban, logrotate, gzip.\n' +
+      '• Dependências da Aplicação (npm): express (servidor autónomo HTTP), multer (uploads até 50MB), react/react-dom 19, vite, pdfkit, tsx e typescript.'
     );
 
-    drawSubTitle('2.1 Diretrizes da Base de Dados');
+    drawSectionTitle('2', 'Base de Dados: Especificação e Script DDL de Criação');
     drawParagraph(
-      '• Localização: /opt/app_usb/gestao_discos.db (permissões chmod 660 para ridis:ridis).\n' +
-      '• Modo Transacional: PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;\n' +
-      '• Backups e Integridade: Cópias periódicas com validação PRAGMA integrity_check.'
+      'A base de dados é mantida exclusivamente no ficheiro /opt/app_usb/gestao_discos.db utilizando o motor SQLite 3 em modo WAL (Write-Ahead Logging). O script DDL homologado de criação é o seguinte:'
     );
 
-    drawSubTitle('2.2 Script SQL de Criação (/opt/app_usb/deploy/schema_criacao_bd.sql)');
     drawCodeBox(
       '-- Ativação de Modos de Segurança, Integridade e Concorrência\n' +
       'PRAGMA journal_mode = WAL;\n' +
@@ -261,11 +205,11 @@ export function generateCompliancePDF(outputPath) {
       '  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,\n' +
       '  projeto TEXT, relatorio_path TEXT\n' +
       ');\n\n' +
-      '-- Tabela de Utilizadores e Controlo de Acesso (RBAC)\n' +
+      '-- Tabela de Utilizadores e Controlo de Acesso (RBAC - ISO 27001 A.5.15)\n' +
       'CREATE TABLE IF NOT EXISTS usuarios (\n' +
       '  id INTEGER PRIMARY KEY AUTOINCREMENT,\n' +
       '  username TEXT UNIQUE NOT NULL,\n' +
-      '  password_hash TEXT NOT NULL,            -- SHA-256 com salt ou scrypt\n' +
+      '  password_hash TEXT NOT NULL,            -- Hash SHA-256 com salt ou scrypt\n' +
       '  is_admin INTEGER DEFAULT 0,\n' +
       '  role TEXT DEFAULT \'operador\',\n' +
       '  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n' +
@@ -284,93 +228,51 @@ export function generateCompliancePDF(outputPath) {
       'CREATE INDEX IF NOT EXISTS idx_discos_arquivo ON discos_usb(arquivo);\n' +
       'CREATE INDEX IF NOT EXISTS idx_ficheiros_disco_id ON relatorio_ficheiros(disco_id);\n' +
       'CREATE INDEX IF NOT EXISTS idx_ficheiros_nome ON relatorio_ficheiros(nome_ficheiro);\n\n' +
-      '-- Administrador Inicial (Obrigatório alterar no primeiro login)\n' +
+      '-- Utilizador Administrador Inicial (Alterar obrigatoriamente no 1.º login)\n' +
       'INSERT OR IGNORE INTO usuarios (username, password_hash, is_admin, role)\n' +
       'VALUES (\'admin\', \'90b1e42cba273a0a38bdfdf3eef250785ff21db2636a0d4db0db08c7c9ec9ff3\', 1, \'admin\');\n' +
       'PRAGMA integrity_check;'
     );
 
-    drawSubTitle('2.3 Criação da Base de Dados');
-    drawCodeBox(
-      'sqlite3 /opt/app_usb/gestao_discos.db < /opt/app_usb/deploy/schema_criacao_bd.sql\n' +
-      'sudo chown ridis:ridis /opt/app_usb/gestao_discos.db* && sudo chmod 660 /opt/app_usb/gestao_discos.db*'
-    );
-
     // =========================================================================
-    // PÁGINA 4: ARQUITETURA AUTÓNOMA (SEM PROXY / SEM NGINX)
+    // PÁGINA 3: SERVIDOR AUTÓNOMO (PORTA 3005) & ESTRUTURA DE FICHEIROS
     // =========================================================================
     doc.addPage();
     drawHeader();
     doc.y = 48;
 
-    drawSectionTitle('3', 'Servidor Web: Arquitetura Autónoma (Sem Nginx / Sem Proxy)');
+    drawSectionTitle('3', 'Servidor Web: Operação Exclusiva na Porta 3005 (Sem Proxy)');
     drawParagraph(
-      'A aplicação RIDIS é integralmente auto-suficiente e não necessita de qualquer servidor web externo como Nginx ou Apache, nem de qualquer proxy reverso, por operar em ambiente interno (intranet DGLAB):'
+      'A aplicação RIDIS atua como servidor web autónomo em regime de porta única:\n' +
+      '• Porta 3005 Exclusiva: A aplicação foi parametrizada para escutar e responder única e exclusivamente na porta 3005. Foi eliminado todo e qualquer suporte secundário à porta 3000, garantindo clareza e previsibilidade no tráfego da intranet da DGLAB.\n' +
+      '• Sem Nginx / Sem Proxy: O servidor Express embutido no Node.js é auto-suficiente: distribui os ficheiros estáticos da SPA React, executa os endpoints REST da API e gere os uploads de ficheiros volumosos (até 50MB) sem necessidade de proxy reverso.'
     );
 
-    drawSubTitle('3.1 Por Que Não É Necessário Nginx?');
+    drawSectionTitle('4', 'Estrutura Completa de Diretórios e Ficheiros em /opt/app_usb/');
     drawParagraph(
-      '1. Servidor HTTP Embutido: O backend desenvolvido em Express escuta diretamente na porta configurada (padrão 3005 com suporte simultâneo à porta 3000) e atende diretamente os pedidos dos postos de trabalho da DGLAB.\n' +
-      '2. Ficheiros Estáticos Embutidos: O servidor Express monta e serve nativamente a interface SPA React (HTML, CSS Tailwind, scripts JavaScript e ícones) sem necessidade de web server intermediário.\n' +
-      '3. Gestão de Uploads Volumosos: O middleware multer lida diretamente com os relatórios .txt e .csv (Snap2HTML) com limite configurado de 50MB no ficheiro server.ts.\n' +
-      '4. Menor Complexidade Operacional: Menos um serviço para manter, atualizar, auditar e configurar no sistema operativo, eliminando pontos de falha e facilitando backups e atualizações via git pull.'
-    );
-
-    drawSubTitle('3.2 Diagrama de Conexão na Intranet');
-    drawCodeBox(
-      'Postos de Trabalho DGLAB (Navegador Web)\n' +
-      '          │\n' +
-      '          │  HTTP Direto (Ex: http://10.x.x.x:3005)\n' +
-      '          ▼\n' +
-      '┌───────────────────────────────────────────────────────────────┐\n' +
-      '│ Servidor Linux (/opt/app_usb/)                                │\n' +
-      '│                                                               │\n' +
-      '│   Node.js / Express (Porta 3005)                              │\n' +
-      '│   ├── Interface Web React (SPA)                               │\n' +
-      '│   ├── API REST e Autenticação (RBAC)                          │\n' +
-      '│   └── persistência em /opt/app_usb/gestao_discos.db (WAL)     │\n' +
-      '└───────────────────────────────────────────────────────────────┘'
-    );
-
-    drawSubTitle('3.3 Configuração de Portas no .env (/opt/app_usb/.env)');
-    drawCodeBox(
-      '# Porta primária da aplicação interna\n' +
-      'APP_PORT=3005\n\n' +
-      '# Caminhos no sistema de ficheiros\n' +
-      'DB_PATH=/opt/app_usb/gestao_discos.db\n' +
-      'RELATORIOS_DIR=/opt/app_usb/relatorios\n' +
-      'BACKUPS_DIR=/opt/app_usb/backups'
-    );
-
-    // =========================================================================
-    // PÁGINA 5: CONJUNTO DE FICHEIROS EM /opt/app_usb/ E PERMISSÕES
-    // =========================================================================
-    doc.addPage();
-    drawHeader();
-    doc.y = 48;
-
-    drawSectionTitle('4', 'Conjunto de Ficheiros em /opt/app_usb/ e Permissões POSIX');
-    drawParagraph(
-      'Estrutura hierárquica completa instalada sob /opt/app_usb/ em cumprimento do Princípio do Menor Privilégio (ISO/IEC 27001 A.8.2 e A.8.9):'
+      'Mapeamento rigoroso dos componentes da aplicação, identificando a localização absoluta e o papel funcional de cada ficheiro no servidor:'
     );
 
     const fileList = [
-      ['/opt/app_usb/server.ts', 'Servidor backend Express, API REST e SQLite nativo', '640 (ridis:ridis)'],
+      ['/opt/app_usb/server.ts', 'Servidor backend Express, API REST, SQLite nativo e Vite middleware na porta 3005', '640 (ridis:ridis)'],
       ['/opt/app_usb/gestao_discos.db*', 'Base de dados SQLite (ficheiros .db, .db-wal e .db-shm)', '660 (ridis:ridis)'],
-      ['/opt/app_usb/.env', 'Variáveis de ambiente locais (portas, caminhos)', '600 (ridis:ridis)'],
-      ['/opt/app_usb/package.json', 'Manifesto de dependências do Node.js', '640 (ridis:ridis)'],
-      ['/opt/app_usb/relatorios/', 'Pasta de armazenamento de relatórios importados', '770 (ridis:ridis)'],
-      ['/opt/app_usb/backups/', 'Pasta de cópias de segurança comprimidas (.db.gz)', '750 (ridis:ridis)'],
-      ['/opt/app_usb/deploy/', 'Scripts de inicialização de BD, systemd e documentação', '750 (ridis:ridis)'],
-      ['/opt/app_usb/src/', 'Código-fonte da interface de utilizador React TypeScript', '750 (ridis:ridis)'],
-      ['/opt/app_usb/LICENSE / LICENCA.md', 'Termos legais de Direitos de Autor exclusivos DGLAB', '644 (ridis:ridis)'],
+      ['/opt/app_usb/.env', 'Variáveis de ambiente (APP_PORT=3005, segredos e limites)', '600 (ridis:ridis)'],
+      ['/opt/app_usb/package.json', 'Manifesto de dependências do Node.js e scripts de execução', '640 (ridis:ridis)'],
+      ['/opt/app_usb/tsconfig.json', 'Configurações de compilação rigorosa do TypeScript', '640 (ridis:ridis)'],
+      ['/opt/app_usb/vite.config.ts', 'Configuração do bundler Vite parametrizado para a porta 3005', '640 (ridis:ridis)'],
+      ['/opt/app_usb/index.html', 'Ponto de entrada HTML da interface web SPA', '640 (ridis:ridis)'],
+      ['/opt/app_usb/LICENSE / LICENCA.md', 'Termos legais de Direitos de Autor e Licença Exclusiva DGLAB', '644 (ridis:ridis)'],
+      ['/opt/app_usb/backups/', 'Diretório reservado para cópias de segurança diárias (.db.gz)', '750 (ridis:ridis)'],
+      ['/opt/app_usb/deploy/', 'Scripts de suporte: schema_criacao_bd.sql, ridis.service, env_producao.example', '750 (ridis:ridis)'],
+      ['/opt/app_usb/src/', 'Código-fonte da SPA React TypeScript (App.tsx, types.ts, main.tsx, index.css)', '750 (ridis:ridis)'],
+      ['/opt/app_usb/public/', 'Ativos estáticos públicos e PDF oficial de especificação técnica', '750 (ridis:ridis)'],
     ];
 
-    let fY = doc.y + 4;
+    let fY = doc.y + 2;
     doc.rect(45, fY, 505, 16).fill(PRIMARY_COLOR);
     doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#ffffff');
     doc.text('Ficheiro / Diretório', 52, fY + 4);
-    doc.text('Função Operacional', 235, fY + 4);
+    doc.text('Função Operacional e Papel no Sistema', 235, fY + 4);
     doc.text('Permissão POSIX', 440, fY + 4);
 
     let curFY = fY + 16;
@@ -383,30 +285,43 @@ export function generateCompliancePDF(outputPath) {
       curFY += 20;
     });
 
-    doc.y = curFY + 12;
-    drawSubTitle('4.1 Aplicação de Permissões no Servidor');
-    drawCodeBox(
-      'sudo chown -R ridis:ridis /opt/app_usb\n' +
-      'sudo find /opt/app_usb -type d -exec chmod 750 {} +\n' +
-      'sudo find /opt/app_usb -type f -exec chmod 640 {} +\n' +
-      'sudo chmod 770 /opt/app_usb/relatorios /opt/app_usb/backups\n' +
-      'sudo chmod 660 /opt/app_usb/gestao_discos.db*\n' +
-      'sudo chmod 600 /opt/app_usb/.env'
-    );
+    doc.y = curFY + 8;
 
     // =========================================================================
-    // PÁGINA 6: CONFIGURAÇÕES SYSTEMD, FIREWALL E POLÍTICAS DE BACKUP
+    // PÁGINA 4: PASTA RELATÓRIOS (DESTAQUE CENTRAL) & CONFIGURAÇÕES SYSTEMD
     // =========================================================================
     doc.addPage();
     drawHeader();
     doc.y = 48;
 
-    drawSectionTitle('5', 'Configurações a Aplicar: Systemd, Firewall e Backups');
+    drawSectionTitle('5', 'A Pasta Central «relatorios/»: Procedimento e Custódia');
     drawParagraph(
-      'Para garantir a persistência, o arranque automático e a conformidade com as exigências de resiliência e continuidade de negócio da Diretiva NIS 2:'
+      'A pasta /opt/app_usb/relatorios/ é um componente vital para o fluxo de trabalho de preservação digital da DGLAB:'
     );
 
-    drawSubTitle('5.1 Unidade de Serviço Systemd (/etc/systemd/system/ridis.service)');
+    // Caixa de Destaque para a pasta relatorios
+    const rBoxY = doc.y;
+    doc.roundedRect(45, rBoxY, 505, 135, 4).fillAndStroke('#f0fdf4', '#86efac');
+    doc.fontSize(10).font('Helvetica-Bold').fillColor(SUCCESS_COLOR)
+      .text('PASTA DE DESTINO DOS RELATÓRIOS: /opt/app_usb/relatorios/', 55, rBoxY + 8);
+    doc.fontSize(8.5).font('Helvetica').fillColor(TEXT_COLOR);
+    doc.text(
+      '1. Finalidade Operacional: É nesta diretoria que mais tarde os relatórios de validação dos discos USB (ficheiros Snap2HTML em formato .html, relatórios de texto .txt ou listagens .csv gerados pelas ferramentas de digitalização) terão que ser copiados/alojados pelos técnicos.\n\n' +
+      '2. Deteção e Indexação Automática: A aplicação RIDIS monitoriza e lê diretamente o conteúdo desta pasta. Sempre que um relatório é aí colocado, o sistema permite associá-lo com 1 clique ao disco correspondente, extraindo automaticamente a contagem de imagens e os Códigos de Referência dos documentos digitais (ex: PT-TT-JC-A-005-0023).\n\n' +
+      '3. Requisitos de Permissões: A pasta deve possuir permissão chmod 770 (ou 775) com proprietário ridis:ridis, garantindo que os técnicos possam transferir ficheiros (via SFTP, SCP ou partilha de rede Samba) e que o RIDIS tenha permissão integral de leitura e análise.',
+      55,
+      rBoxY + 24,
+      { width: 485, lineGap: 1.8 }
+    );
+
+    doc.y = rBoxY + 145;
+
+    drawSectionTitle('6', 'Configurações do Serviço Systemd e Segurança');
+    drawParagraph(
+      'Para garantir o funcionamento ininterrupto da aplicação como serviço de sistema na porta 3005 com sandboxing (ISO 27001 A.8.9):'
+    );
+
+    drawSubTitle('6.1 Ficheiro de Serviço (/etc/systemd/system/ridis.service)');
     drawCodeBox(
       '[Unit]\n' +
       'Description=RIDIS — Gestao de Discos USB e Preservacao Digital (DGLAB)\n' +
@@ -420,10 +335,9 @@ export function generateCompliancePDF(outputPath) {
       'Environment=APP_PORT=3005\n' +
       'EnvironmentFile=-/opt/app_usb/.env\n' +
       'ExecStart=/usr/bin/node /opt/app_usb/node_modules/.bin/tsx /opt/app_usb/server.ts\n\n' +
-      '# Resiliência e Continuidade (NIS 2)\n' +
       'Restart=always\n' +
       'RestartSec=5s\n\n' +
-      '# Sandboxing de Segurança (ISO 27001 A.8.9)\n' +
+      '# Sandboxing ISO/IEC 27001 A.8.9\n' +
       'NoNewPrivileges=true\n' +
       'ProtectSystem=strict\n' +
       'ProtectHome=true\n' +
@@ -438,37 +352,22 @@ export function generateCompliancePDF(outputPath) {
       'WantedBy=multi-user.target'
     );
 
-    drawSubTitle('5.2 Ativação do Serviço');
-    drawCodeBox(
-      'sudo systemctl daemon-reload\n' +
-      'sudo systemctl enable --now ridis.service\n' +
-      'sudo systemctl status ridis.service'
-    );
-
-    drawSubTitle('5.3 Firewall UFW (Ambiente Interno)');
+    drawSubTitle('6.2 Firewall Interna UFW (Porta 3005)');
     drawCodeBox(
       'sudo ufw default deny incoming && sudo ufw default allow outgoing\n' +
       'sudo ufw allow from 10.0.0.0/8 to any port 22 proto tcp comment \'SSH Admin DGLAB\'\n' +
-      'sudo ufw allow from 10.0.0.0/8 to any port 3005 proto tcp comment \'RIDIS HTTP Intranet\'\n' +
+      'sudo ufw allow from 10.0.0.0/8 to any port 3005 proto tcp comment \'RIDIS HTTP Porta 3005\'\n' +
       'sudo ufw enable'
     );
 
-    drawSubTitle('5.4 Rotina de Backups Automáticos (NIS 2 / ISO 27001 A.8.13)');
-    drawParagraph(
-      'Cronjob diário em /etc/cron.d/ridis-backup com compressão e verificação atómica:'
-    );
-    drawCodeBox(
-      '0 2 * * * ridis /usr/bin/sqlite3 /opt/app_usb/gestao_discos.db ".backup \'/opt/app_usb/backups/backup_auto_$(date +\\%Y\\%m\\%d_\\%H\\%M\\%S).db\'" && gzip /opt/app_usb/backups/backup_auto_*.db && find /opt/app_usb/backups -name "*.db.gz" -mtime +90 -delete'
-    );
-
     // Encerramento
-    doc.moveDown(0.5);
+    doc.moveDown(0.4);
     const signY = doc.y;
     doc.roundedRect(45, signY, 505, 45, 4).fillAndStroke('#f8fafc', BORDER_COLOR);
     doc.fontSize(8).font('Helvetica-Bold').fillColor(PRIMARY_COLOR)
-      .text('CONFORMIDADE TÉCNICA E USO RESTRITO — ADMINISTRAÇÃO BD (DGLAB)', 55, signY + 7);
+      .text('HOMOLOGAÇÃO TÉCNICA — USO RESTRITO ADMINISTRAÇÃO BD (DGLAB)', 55, signY + 7);
     doc.fontSize(7.5).font('Helvetica').fillColor(TEXT_COLOR)
-      .text('Documento homologado para implantação em /opt/app_usb/ sem proxy reverso. Os artefactos e scripts encontram-se disponíveis no módulo Administração BD da aplicação.', 55, signY + 18, { width: 485 });
+      .text('Documento oficial aprovado para operação na porta 3005 em /opt/app_usb/ com servidor autónomo. Acesso restrito ao módulo de Administração de BD da aplicação.', 55, signY + 18, { width: 485 });
     doc.fontSize(7.5).font('Helvetica-Bold').fillColor(ACCENT_COLOR)
       .text('Autor: José Miguel Magalhães · DGLAB / Serviços Centrais (2026)', 55, signY + 31);
 
@@ -479,7 +378,7 @@ export function generateCompliancePDF(outputPath) {
       doc.save();
       doc.moveTo(45, 800).lineTo(550, 800).strokeColor(BORDER_COLOR).lineWidth(0.5).stroke();
       doc.fontSize(7.5).font('Helvetica').fillColor(MUTED_COLOR)
-        .text('RIDIS · DGLAB · Especificação Técnica (/opt/app_usb/) · ISO 27001 & NIS 2', 45, 806);
+        .text('RIDIS · DGLAB · Especificação de Arquitetura (Porta 3005) · ISO 27001 & NIS 2', 45, 806);
       doc.fontSize(7.5).font('Helvetica-Bold').fillColor(PRIMARY_COLOR)
         .text(`Página ${i + 1} de ${range.count}`, 45, 806, { align: 'right' });
       doc.restore();

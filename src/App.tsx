@@ -3655,11 +3655,11 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                     <div className="flex items-center gap-2">
                       <h3 className="text-sm font-bold">Convergência Normativa ISO/IEC 27001:2022 & Diretiva NIS 2</h3>
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600/30 text-blue-300 border border-blue-500/40">
-                        /opt/app_usb/ · Intranet DGLAB
+                        /opt/app_usb/ · Porta 3005 Exclusiva
                       </span>
                     </div>
                     <p className="text-xs text-slate-400">
-                      Roteiro de implantação autónoma: pré-requisitos antes do clone GitHub, BD SQLite (WAL), servidor nativo sem proxy/Nginx e systemd
+                      Arquitetura autónoma na intranet DGLAB: estrutura de ficheiros, pasta central <span className="font-mono text-emerald-400">relatorios/</span> e BD SQLite (WAL)
                     </p>
                   </div>
                 </div>
@@ -3676,53 +3676,60 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 </a>
               </div>
 
-              {/* 5 Technical Cards according to requirements */}
+              {/* Destaque Central: Pasta relatorios/ onde mais tarde os relatórios terão que ser copiados */}
+              <div className="p-4 rounded-xl border border-emerald-600/40 bg-emerald-950/20 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold text-emerald-300">
+                      Pasta Central Obrigatória: <code className="font-mono bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-700/60 text-emerald-200">/opt/app_usb/relatorios/</code>
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
+                    chmod 770 (ridis:ridis)
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-100/90 leading-relaxed">
+                  É para esta pasta que <strong>mais tarde os relatórios de validação dos discos USB terão que ser copiados/transferidos</strong> pelos técnicos (ficheiros Snap2HTML <code className="font-mono">.html</code>, relatórios <code className="font-mono">.txt</code> ou listagens <code className="font-mono">.csv</code>).
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 pt-1 text-[11px] text-emerald-200/80">
+                  <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-800/40">
+                    <strong>1. Cópia de Ficheiros:</strong> Transferência direta via SFTP, SMB/Samba ou rsync para <code className="font-mono text-white">/opt/app_usb/relatorios/</code>.
+                  </div>
+                  <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-800/40">
+                    <strong>2. Deteção & Leitura:</strong> A app monitoriza esta diretoria e associa com 1 clique os relatórios aos discos inventariados.
+                  </div>
+                  <div className="p-2 rounded-lg bg-emerald-950/40 border border-emerald-800/40">
+                    <strong>3. Indexação de Matrizes:</strong> Extração automática de Códigos de Referência e contagem de imagens TIF sem perda de dados.
+                  </div>
+                </div>
+              </div>
+
+              {/* Cards de Arquitetura e Estrutura */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                {/* 1. Módulos e Pacotes do SO Pré-Clone GitHub */}
+                {/* 1. Servidor Autónomo na Porta 3005 */}
                 <div
                   className={`p-3.5 rounded-xl border space-y-2 ${
                     theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-blue-400">1. Módulos Pré-Clone (SO)</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">Instalar 1.º</span>
+                    <span className="font-bold text-sky-400">1. Servidor na Porta 3005</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-800/40">Sem Porta 3000</span>
                   </div>
                   <p className="text-slate-400 text-[11px] leading-relaxed">
-                    Pacotes a instalar antes de clonar o repositório: <strong>git</strong> (para o clone), <strong>curl</strong>, <strong>ca-certificates</strong>, <strong>build-essential</strong>, <strong>sqlite3</strong>, <strong>libsqlite3-dev</strong> e runtime <strong>Node.js 22 LTS</strong> com npm.
+                    Operação <strong>exclusiva na porta 3005</strong> para evitar conflitos na intranet da DGLAB. O backend Express serve a interface SPA e a API nativamente sem necessidade de Nginx ou proxy reverso.
                   </p>
-                  <div className="bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[10px] text-slate-300">
-                    sudo apt install -y git curl build-essential sqlite3 libsqlite3-dev
-                  </div>
                 </div>
 
-                {/* 2. Instalação via GitHub em /opt/app_usb/ */}
+                {/* 2. Base de Dados SQLite (WAL) */}
                 <div
                   className={`p-3.5 rounded-xl border space-y-2 ${
                     theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-purple-400">2. Clone & Pasta /opt/app_usb/</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">GitHub</span>
-                  </div>
-                  <p className="text-slate-400 text-[11px] leading-relaxed">
-                    Clonagem direta para a diretoria <strong>/opt/app_usb/</strong> e instalação das dependências da app:
-                  </p>
-                  <div className="bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[10px] text-slate-300 space-y-0.5">
-                    <div>git clone &lt;repo-url&gt; /opt/app_usb</div>
-                    <div>cd /opt/app_usb && npm install</div>
-                  </div>
-                </div>
-
-                {/* 3. Base de Dados SQLite & Script DDL */}
-                <div
-                  className={`p-3.5 rounded-xl border space-y-2 ${
-                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-emerald-400">3. Base de Dados & Script DDL</span>
+                    <span className="font-bold text-emerald-400">2. Base de Dados SQLite</span>
                     <a
                       href="/api/implantacao/script-bd"
                       download="schema_criacao_bd.sql"
@@ -3732,36 +3739,18 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                     </a>
                   </div>
                   <p className="text-slate-400 text-[11px] leading-relaxed">
-                    Ficheiro <strong>/opt/app_usb/gestao_discos.db</strong> em modo WAL (Write-Ahead Logging). Script DDL completo com tabelas, índices e admin inicial.
+                    Ficheiro local <code className="font-mono text-slate-300">/opt/app_usb/gestao_discos.db</code> em modo WAL (Write-Ahead Logging). Concorrência de leitura/escrita e integridade transacional sem portas de BD expostas.
                   </p>
-                  <div className="bg-slate-950 p-2 rounded border border-slate-800 font-mono text-[10px] text-slate-300">
-                    sqlite3 /opt/app_usb/gestao_discos.db &lt; deploy/schema_criacao_bd.sql
-                  </div>
                 </div>
 
-                {/* 4. Servidor Web Autónomo (Sem Nginx / Sem Proxy) */}
+                {/* 3. Serviço Systemd em /opt/app_usb/ */}
                 <div
                   className={`p-3.5 rounded-xl border space-y-2 ${
                     theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sky-400">4. Servidor Autónomo (Sem Proxy)</span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-sky-950/60 text-sky-300 border border-sky-800/40">Sem Nginx</span>
-                  </div>
-                  <p className="text-slate-400 text-[11px] leading-relaxed">
-                    <strong>Não requer Nginx nem proxy reverso</strong>. A aplicação já inclui servidor HTTP Express autónomo que serve diretamente a interface web e API na porta 3005 para a rede interna da DGLAB.
-                  </p>
-                </div>
-
-                {/* 5. Ficheiros e Serviço Systemd em /opt/app_usb/ */}
-                <div
-                  className={`p-3.5 rounded-xl border space-y-2 ${
-                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-amber-400">5. Ficheiros & Serviço Systemd</span>
+                    <span className="font-bold text-amber-400">3. Serviço de Sistema Systemd</span>
                     <a
                       href="/api/implantacao/service"
                       download="ridis.service"
@@ -3771,34 +3760,34 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                     </a>
                   </div>
                   <p className="text-slate-400 text-[11px] leading-relaxed">
-                    Serviço de arranque automático com isolamento de privilégios (`WorkingDirectory=/opt/app_usb` e permissões restritas chmod 640/750).
+                    Unidade <code className="font-mono text-slate-300">/etc/systemd/system/ridis.service</code> com <code className="font-mono">WorkingDirectory=/opt/app_usb</code>, arranque no boot, reinício automático (NIS 2) e isolamento sandboxed.
                   </p>
                 </div>
+              </div>
 
-                {/* 6. Descarregar Artefactos Isolados */}
-                <div
-                  className={`p-3.5 rounded-xl border space-y-2 flex flex-col justify-between ${
-                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
-                  }`}
-                >
-                  <div>
-                    <div className="font-bold text-slate-300">Ficheiros de Configuração</div>
-                    <p className="text-slate-400 text-[11px] mt-1">
-                      Artefactos prontos a usar para a pasta /opt/app_usb/:
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
+              {/* Tabela de Estrutura de Ficheiros e Localizações em /opt/app_usb/ */}
+              <div
+                className={`p-4 rounded-xl border space-y-2.5 ${
+                  theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-slate-200 flex items-center gap-1.5">
+                    <HardDrive className="w-3.5 h-3.5 text-blue-400" />
+                    Estrutura de Ficheiros e Localização Exata em <code className="font-mono text-blue-400">/opt/app_usb/</code>
+                  </span>
+                  <div className="flex items-center gap-2 text-[10px]">
                     <a
                       href="/api/implantacao/script-bd"
                       download="schema_criacao_bd.sql"
-                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[10px] font-mono border border-slate-700 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 font-mono border border-slate-700 flex items-center gap-1"
                     >
                       <Database className="w-2.5 h-2.5" /> schema.sql
                     </a>
                     <a
                       href="/api/implantacao/service"
                       download="ridis.service"
-                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 text-[10px] font-mono border border-slate-700 flex items-center gap-1"
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 font-mono border border-slate-700 flex items-center gap-1"
                     >
                       <HardDrive className="w-2.5 h-2.5" /> ridis.service
                     </a>
@@ -3807,10 +3796,37 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                       target="_blank"
                       rel="noreferrer"
                       download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
-                      className="px-2 py-1 rounded bg-blue-700 hover:bg-blue-600 text-white text-[10px] font-mono flex items-center gap-1"
+                      className="px-2.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-white font-mono flex items-center gap-1 font-bold"
                     >
-                      <FileText className="w-2.5 h-2.5" /> PDF Completo
+                      <Download className="w-2.5 h-2.5" /> PDF Oficial
                     </a>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[11px] font-mono">
+                  <div className="p-2 rounded bg-slate-900/80 border border-slate-800/80 space-y-1">
+                    <div className="text-blue-300 font-bold">/opt/app_usb/server.ts</div>
+                    <div className="text-slate-400 font-sans text-[10px]">Servidor backend Express na porta 3005 e API REST</div>
+                  </div>
+                  <div className="p-2 rounded bg-slate-900/80 border border-slate-800/80 space-y-1">
+                    <div className="text-emerald-300 font-bold">/opt/app_usb/gestao_discos.db</div>
+                    <div className="text-slate-400 font-sans text-[10px]">Base de dados SQLite com tabelas de discos e matrizes</div>
+                  </div>
+                  <div className="p-2 rounded bg-slate-900/80 border border-slate-800/80 space-y-1">
+                    <div className="text-emerald-400 font-bold">/opt/app_usb/relatorios/</div>
+                    <div className="text-slate-400 font-sans text-[10px]">Destino obrigatório para cópia de relatórios Snap2HTML/CSV</div>
+                  </div>
+                  <div className="p-2 rounded bg-slate-900/80 border border-slate-800/80 space-y-1">
+                    <div className="text-amber-300 font-bold">/opt/app_usb/backups/</div>
+                    <div className="text-slate-400 font-sans text-[10px]">Diretório de salvaguarda de cópias de segurança (.db.gz)</div>
+                  </div>
+                  <div className="p-2 rounded bg-slate-900/80 border border-slate-800/80 space-y-1">
+                    <div className="text-purple-300 font-bold">/opt/app_usb/deploy/</div>
+                    <div className="text-slate-400 font-sans text-[10px]">Scripts schema_criacao_bd.sql, ridis.service e env_producao</div>
+                  </div>
+                  <div className="p-2 rounded bg-slate-900/80 border border-slate-800/80 space-y-1">
+                    <div className="text-sky-300 font-bold">/opt/app_usb/.env</div>
+                    <div className="text-slate-400 font-sans text-[10px]">Variáveis de ambiente (APP_PORT=3005 e caminhos locais)</div>
                   </div>
                 </div>
               </div>

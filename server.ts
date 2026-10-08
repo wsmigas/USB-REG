@@ -17,12 +17,11 @@ import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
 const app = express();
-// Configuração da porta: padrão 3005 com suporte simultâneo para a porta 3000
-const PRIMARY_PORT = Number(process.env.APP_PORT || 3005);
+// Configuração da porta da aplicação: operação exclusiva na porta 3005
+const PORT = Number(process.env.APP_PORT || 3005);
 const PORTS_TO_LISTEN = Array.from(
   new Set([
-    PRIMARY_PORT,
-    3000,
+    PORT,
     ...(process.env.PORT ? [Number(process.env.PORT)] : []),
   ])
 );
