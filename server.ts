@@ -881,6 +881,25 @@ app.get('/api/documentacao-pdf', (_req, res) => {
   res.status(404).json({ error: 'Ficheiro PDF ainda não gerado no servidor.' });
 });
 
+// Endpoint para download da Especificação Técnica em formato Microsoft Word (.docx)
+app.get(['/api/documentacao-docx', '/api/documentacao-word'], (_req, res) => {
+  const docxName = 'RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx';
+  const docxPathRoot = path.join(BASE_DIR, docxName);
+  const docxPathPublic = path.join(BASE_DIR, 'public', docxName);
+  const targetPath = fs.existsSync(docxPathPublic) ? docxPathPublic : docxPathRoot;
+
+  if (fs.existsSync(targetPath)) {
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${docxName}"`);
+    return res.sendFile(targetPath);
+  }
+
+  res.status(404).json({ error: 'Ficheiro Word (.docx) ainda não gerado no servidor.' });
+});
+
 // Endpoint com o inventário dos artefactos de implantação e segurança (exclusivo para Admin BD)
 app.get('/api/implantacao/arquivos', (_req, res) => {
   res.json({
@@ -891,12 +910,19 @@ app.get('/api/implantacao/arquivos', (_req, res) => {
     diretorio_base: '/opt/app_usb/',
     arquitetura: 'Servidor Autónomo Node.js/Express na porta 3005 (Sem Proxy / Sem Nginx)',
     pdf_url: '/api/documentacao-pdf',
+    docx_url: '/api/documentacao-docx',
     ficheiros: [
       {
         tipo: 'PDF Oficial',
         nome: 'RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf',
         descricao: 'Documento PDF com convergência 27001/NIS 2 e especificações completas para /opt/app_usb/',
         rota_download: '/api/documentacao-pdf'
+      },
+      {
+        tipo: 'Word Oficial (.docx)',
+        nome: 'RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx',
+        descricao: 'Manual técnico e arquitetura em formato Microsoft Word (.docx) editável',
+        rota_download: '/api/documentacao-docx'
       },
       {
         tipo: 'Script SQL BD',

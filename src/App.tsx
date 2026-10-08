@@ -3664,16 +3664,28 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                   </div>
                 </div>
 
-                <a
-                  href="/api/documentacao-pdf"
-                  target="_blank"
-                  rel="noreferrer"
-                  download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
-                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer"
-                >
-                  <Download className="w-4 h-4" />
-                  Descarregar Especificação Técnica em PDF
-                </a>
+                <div className="flex flex-wrap items-center gap-2">
+                  <a
+                    href="/api/documentacao-pdf"
+                    target="_blank"
+                    rel="noreferrer"
+                    download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                    title="Descarregar Especificação Técnica em formato Adobe PDF"
+                  >
+                    <Download className="w-4 h-4" />
+                    Descarregar PDF Oficial
+                  </a>
+                  <a
+                    href="/api/documentacao-docx"
+                    download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx"
+                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer border border-sky-400/30"
+                    title="Descarregar Manual Técnico em formato Microsoft Word (.docx)"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Descarregar Manual Word (.docx)
+                  </a>
+                </div>
               </div>
 
               {/* Destaque Central: Pasta relatorios/ onde mais tarde os relatórios terão que ser copiados */}
@@ -3796,9 +3808,16 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                       target="_blank"
                       rel="noreferrer"
                       download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
-                      className="px-2.5 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-white font-mono flex items-center gap-1 font-bold"
+                      className="px-2 py-0.5 rounded bg-blue-700 hover:bg-blue-600 text-white font-mono flex items-center gap-1 font-bold"
                     >
-                      <Download className="w-2.5 h-2.5" /> PDF Oficial
+                      <Download className="w-2.5 h-2.5" /> PDF
+                    </a>
+                    <a
+                      href="/api/documentacao-docx"
+                      download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx"
+                      className="px-2 py-0.5 rounded bg-sky-700 hover:bg-sky-600 text-white font-mono flex items-center gap-1 font-bold border border-sky-400/40"
+                    >
+                      <FileText className="w-2.5 h-2.5" /> Word (.docx)
                     </a>
                   </div>
                 </div>

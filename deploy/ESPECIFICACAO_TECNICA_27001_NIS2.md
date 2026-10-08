@@ -284,5 +284,16 @@ Cronjob em `/etc/cron.d/ridis-backup`:
 
 ---
 
+## 7. Proteção Jurídica e Direitos de Autor (Copyright)
+
+* **Titular dos Direitos de Autor:** José Miguel Magalhães
+* **Organização Licenciada:** Direção-Geral do Livro, dos Arquivos e das Bibliotecas (DGLAB)
+* **Condições de Licenciamento:** Licença proprietária e exclusiva para o ambiente interno da DGLAB. É expressamente proibida a cópia, reprodução, redistribuição, engenharia reversa ou utilização para qualquer outro fim ou entidade sem autorização expressa por escrito do autor.
+* **Formatos Oficiais do Manual:**
+  * Documento em formato **Adobe PDF** vetorial (`RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf`);
+  * Manual em formato **Microsoft Word** (`RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx`), disponível para edição e arquivo documental interno no módulo de Administração BD.
+
+---
+
 **Classificação:** Acesso Restrito — Módulo Administração BD (DGLAB).  
 *Documento aprovado exclusivamente para o ambiente interno da DGLAB.*
