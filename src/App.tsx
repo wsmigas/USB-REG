@@ -2097,25 +2097,6 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
               {/* Filter Legend & Quick TIF Search Shortcuts */}
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-xs">
                 <div className={`flex items-center gap-3 flex-wrap ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
-                      V
-                    </span>
-                    Verificado
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
-                      I
-                    </span>
-                    Integrado
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
-                      A
-                    </span>
-                    Armazenado no Servidor
-                  </span>
-                  <span>·</span>
                   <span>Exemplos pesquisa de documentos:</span>
                   <button
                     type="button"
@@ -2138,6 +2119,25 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                   >
                     PT/ADPRT/*
                   </button>
+                  <span>·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
+                      V
+                    </span>
+                    Verificado
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
+                      I
+                    </span>
+                    Integrado
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="w-4 h-4 rounded-full bg-slate-600 text-white text-[9px] leading-none font-bold inline-flex items-center justify-center">
+                      A
+                    </span>
+                    Armazenado no Servidor
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-3">
