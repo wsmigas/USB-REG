@@ -1,3 +1,11 @@
+/**
+ * RIDIS — Gestão de Discos USB e Matrizes
+ * 
+ * Copyright (c) 2026 José Miguel Magalhães. Todos os direitos reservados.
+ * Licenciado exclusivamente para uso interno da DGLAB (Direção-Geral do Livro, dos Arquivos e das Bibliotecas).
+ * É expressamente proibida a cópia, reprodução, redistribuição ou utilização para qualquer outro fim.
+ */
+
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -9,7 +17,15 @@ import multer from 'multer';
 import { DatabaseSync } from 'node:sqlite';
 
 const app = express();
-const PORT = 3000;
+// Configuração da porta: padrão 3005 com suporte simultâneo para a porta 3000
+const PRIMARY_PORT = Number(process.env.APP_PORT || 3005);
+const PORTS_TO_LISTEN = Array.from(
+  new Set([
+    PRIMARY_PORT,
+    3000,
+    ...(process.env.PORT ? [Number(process.env.PORT)] : []),
+  ])
+);
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -825,6 +841,29 @@ app.get('/relatorios/:filename', (req, res) => {
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
   }
   res.sendFile(fullPath);
+});
+
+// Endpoint com a informação formal de Direitos de Autor e Licenciamento Proprietário
+app.get('/api/licenca', (_req, res) => {
+  res.json({
+    aplicacao: 'RIDIS — Sistema de Gestão de Discos USB, Matrizes e Relatórios de Preservação Digital',
+    autor: 'José Miguel Magalhães',
+    direitos_autor: 'Copyright (c) 2026 José Miguel Magalhães. Todos os direitos reservados.',
+    organizacao_licenciada: 'DGLAB — Direção-Geral do Livro, dos Arquivos e das Bibliotecas',
+    tipo_licenca: 'Proprietária, Não-Transferível e Exclusiva',
+    finalidade: 'Uso estrito e exclusivo nas operações internas da DGLAB. Não pode ser usada para mais nenhum fim.',
+    restricoes: [
+      'Proibida a utilização para qualquer outro fim além das operações internas da DGLAB.',
+      'Proibida a cópia, reprodução, redistribuição, empréstimo, venda ou sublicenciamento a terceiros.',
+      'Proibida a descompilação, desmontagem ou engenharia reversa do código fonte.',
+      'Software confidencial e proprietário.'
+    ],
+    legislacao: [
+      'Código do Direito de Autor e dos Direitos Conexos (Decreto-Lei n.º 63/85)',
+      'Regime Jurídico da Proteção de Programas de Computador (Decreto-Lei n.º 252/94)',
+      'Diretiva 2009/24/CE do Parlamento Europeu e do Conselho'
+    ]
+  });
 });
 
 // Download a sample Snap2HTML file so users can test importing a new report
@@ -3487,9 +3526,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`RIDIS Server running on http://localhost:${PORT}`);
-    // Automatically compact legacy .TIF rows into unique Document Reference Codes if any uncompacted .TIF rows exist
+  let compactionTriggered = false;
+  const triggerAutoCompaction = () => {
+    if (compactionTriggered) return;
+    compactionTriggered = true;
     setImmediate(() => {
       try {
         const hasUncompactedTif = db
@@ -3510,7 +3550,25 @@ async function startServer() {
         console.warn('[RIDIS] Aviso na verificação de compactação automática:', err);
       }
     });
-  });
+  };
+
+  for (const port of PORTS_TO_LISTEN) {
+    try {
+      const serverInstance = app.listen(port, '0.0.0.0', () => {
+        console.log(`RIDIS Server running on http://localhost:${port}`);
+        triggerAutoCompaction();
+      });
+      serverInstance.on('error', (err: any) => {
+        if (err?.code === 'EADDRINUSE') {
+          console.log(`[RIDIS] Porta ${port} já em uso no sistema, a prosseguir com as outras portas.`);
+        } else {
+          console.warn(`[RIDIS] Aviso na porta ${port}:`, err?.message || err);
+        }
+      });
+    } catch (err) {
+      console.warn(`[RIDIS] Falha ao iniciar na porta ${port}:`, err);
+    }
+  }
 }
 
 startServer();

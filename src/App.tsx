@@ -1,3 +1,12 @@
+/**
+ * RIDIS — Gestão de Discos USB e Matrizes
+ * 
+ * Copyright (c) 2026 José Miguel Magalhães. Todos os direitos reservados.
+ * Desenvolvido e licenciado exclusivamente para uso interno da DGLAB (Direção-Geral do Livro, dos Arquivos e das Bibliotecas).
+ * É expressamente proibida a cópia, reprodução, redistribuição, engenharia reversa
+ * ou utilização para qualquer outro fim sem autorização prévia por escrito do autor.
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Search,
@@ -230,6 +239,10 @@ export default function App() {
   const [gitRestartAfterUpdate, setGitRestartAfterUpdate] = useState(true);
   const [gitUpdateLogs, setGitUpdateLogs] = useState<string[] | null>(null);
   const [confirmGitUpdate, setConfirmGitUpdate] = useState(false);
+
+  // Legal Protection & Copyright state (José Miguel Magalhães - DGLAB)
+  const [showLicenseModal, setShowLicenseModal] = useState(false);
+  const [copiedLicenseText, setCopiedLicenseText] = useState(false);
 
   // Reset pagination to 25 whenever search or filters change
   useEffect(() => {
@@ -1323,6 +1336,256 @@ export default function App() {
     return `${bytes} B`;
   };
 
+  const LICENSE_FULL_TEXT = `TERMO DE LICENCIAMENTO PROPRIETÁRIO E DIREITOS DE AUTOR
+================================================================================
+RIDIS — Sistema de Gestão de Discos USB, Matrizes e Relatórios de Preservação Digital
+================================================================================
+
+AUTOR E TITULAR DOS DIREITOS DE AUTOR (COPYRIGHT):
+José Miguel Magalhães
+Todos os direitos reservados. Copyright (c) 2026 José Miguel Magalhães.
+
+ENTIDADE LICENCIADA EXCLUSIVA:
+DGLAB — Direção-Geral do Livro, dos Arquivos e das Bibliotecas
+(República Portuguesa)
+
+--------------------------------------------------------------------------------
+1. CONCESSÃO DE LICENÇA DE USO EXCLUSIVO
+--------------------------------------------------------------------------------
+O Autor concede à DGLAB (Direção-Geral do Livro, dos Arquivos e das Bibliotecas)
+uma licença não-transferível, intransmissível e restrita para a utilização, 
+execução e exploração interna deste software (RIDIS) exclusivamente nas suas 
+operações arquivísticas e infraestruturas institucionais oficiais.
+
+--------------------------------------------------------------------------------
+2. FINALIDADE ESTRITA E RESTRIÇÃO ABSOLUTA DE USO
+--------------------------------------------------------------------------------
+Esta aplicação e o seu respetivo código fonte destinam-se ÚNICA E EXCLUSIVAMENTE
+a utilização no âmbito das funções da DGLAB.
+
+É EXPRESSAMENTE PROIBIDA A UTILIZAÇÃO DESTE SOFTWARE, TOTAL OU PARCIALMENTE:
+a) Para qualquer outro fim que não as atividades operacionais internas da DGLAB;
+b) Por quaisquer terceiros, outras entidades públicas ou privadas, pessoas 
+   singulares ou coletivas externas à DGLAB;
+c) Em contextos comerciais, industriais, ou de prestação de serviços a terceiros.
+
+--------------------------------------------------------------------------------
+3. PROIBIÇÃO DE CÓPIA, DISTRIBUIÇÃO E SUBLICENCIAMENTO
+--------------------------------------------------------------------------------
+Sem a prévia autorização expressa e por escrito do Autor (José Miguel Magalhães),
+é estritamente proibido:
+a) Copiar, reproduzir, duplicar ou clonar o código fonte ou os binários desta 
+   aplicação;
+b) Distribuir, sublicenciar, ceder, emprestar, vender, alugar ou transferir 
+   o software a quaisquer outras entidades;
+c) Publicar o código fonte em repositórios públicos ou canais de distribuição 
+   abertos.
+
+--------------------------------------------------------------------------------
+4. ENGENHARIA REVERSA E DESCOMPILAÇÃO
+--------------------------------------------------------------------------------
+É estritamente vedada a realização de descompilação, desmontagem, engenharia 
+reversa ou qualquer tentativa de extração não autorizada do código fonte ou 
+arquitetura dos componentes de software.
+
+--------------------------------------------------------------------------------
+5. ENQUADRAMENTO JURÍDICO E PROTEÇÃO LEGAL
+--------------------------------------------------------------------------------
+Este software está integralmente protegido pela legislação nacional portuguesa 
+e internacional sobre Direitos de Autor e Propriedade Intelectual, nomeadamente:
+- Código do Direito de Autor e dos Direitos Conexos (CDADC - Decreto-Lei n.º 63/85);
+- Regime Jurídico da Proteção de Programas de Computador (Decreto-Lei n.º 252/94);
+- Diretiva 2009/24/CE do Parlamento Europeu e do Conselho;
+- Convenção de Berna para a Proteção das Obras Literárias e Artísticas.
+
+Qualquer infração, cópia ilegítima ou utilização fora do âmbito exclusivo da 
+DGLAB constitui violação de direitos de autor, sujeitando os infratores a 
+responsabilidade civil e criminal.
+
+--------------------------------------------------------------------------------
+Data de Registo: 2026
+Autor: José Miguel Magalhães
+Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bibliotecas)`;
+
+  const renderLicenseModal = () => {
+    if (!showLicenseModal) return null;
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 overflow-y-auto">
+        <div
+          className={`w-full max-w-2xl rounded-2xl border shadow-2xl overflow-hidden my-8 ${
+            theme === 'dark'
+              ? 'bg-slate-900 border-slate-800 text-slate-100'
+              : 'bg-white border-slate-200 text-slate-900'
+          }`}
+        >
+          {/* Header */}
+          <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white border-b border-blue-900/50 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-600/30 border border-blue-500/40 text-blue-400">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold">Proteção Jurídica & Direitos de Autor</h2>
+                <p className="text-xs text-blue-300">Termo de Licenciamento Proprietário e Exclusivo</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLicenseModal(false)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Body */}
+          <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto text-xs">
+            {/* Key Entities Badges */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div
+                className={`p-3.5 rounded-xl border ${
+                  theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">
+                  Autor & Titular dos Direitos
+                </div>
+                <div className="text-sm font-bold text-blue-400 mt-1">José Miguel Magalhães</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Todos os direitos reservados © 2026</div>
+              </div>
+              <div
+                className={`p-3.5 rounded-xl border ${
+                  theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-400">
+                  Organização Licenciada
+                </div>
+                <div className="text-sm font-bold text-emerald-400 mt-1">DGLAB</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  Direção-Geral do Livro, dos Arquivos e das Bibliotecas
+                </div>
+              </div>
+            </div>
+
+            {/* Critical Restriction Callout */}
+            <div className="p-4 rounded-xl border border-red-500/30 bg-red-950/20 space-y-1.5">
+              <div className="flex items-center gap-2 font-bold text-red-300 text-xs">
+                <span>⚠️</span>
+                <span>Restrição Absoluta de Utilização e Finalidade</span>
+              </div>
+              <p className="text-red-200/90 leading-relaxed text-[11px]">
+                Esta aplicação foi desenvolvida e licenciada <strong>única e exclusivamente para utilização interna na DGLAB</strong>.
+                <strong> Não pode ser utilizada para mais nenhum fim</strong>, comercial, pessoal ou institucional,
+                nem transferida ou disponibilizada a terceiros sem autorização prévia por escrito do autor.
+              </p>
+            </div>
+
+            {/* Clauses */}
+            <div className="space-y-3">
+              <div
+                className={`p-3 rounded-lg border ${
+                  theme === 'dark' ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="font-semibold text-slate-200 flex items-center gap-1.5 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block"></span>
+                  1. Concessão de Licença Restrita
+                </div>
+                <p className="text-slate-400 leading-relaxed text-[11px]">
+                  Licença não-transferível, intransmissível e restrita às operações arquivísticas e patrimoniais da DGLAB.
+                </p>
+              </div>
+
+              <div
+                className={`p-3 rounded-lg border ${
+                  theme === 'dark' ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="font-semibold text-slate-200 flex items-center gap-1.5 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block"></span>
+                  2. Proibição Estrita de Cópia e Distribuição
+                </div>
+                <p className="text-slate-400 leading-relaxed text-[11px]">
+                  É proibida a reprodução, duplicação, distribuição, cedência, locação, sublicenciamento ou publicação do código fonte e dos binários.
+                </p>
+              </div>
+
+              <div
+                className={`p-3 rounded-lg border ${
+                  theme === 'dark' ? 'bg-slate-950/40 border-slate-800/80' : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="font-semibold text-slate-200 flex items-center gap-1.5 mb-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block"></span>
+                  3. Engenharia Reversa e Proteção Legal
+                </div>
+                <p className="text-slate-400 leading-relaxed text-[11px]">
+                  É vedada a descompilação, engenharia reversa ou desassemblagem. Protegido pelo Código do Direito de Autor (Decreto-Lei n.º 63/85), Regime Jurídico de Programas de Computador (Decreto-Lei n.º 252/94) e Diretiva Europeia 2009/24/CE.
+                </p>
+              </div>
+            </div>
+
+            {/* Verbatim License Box */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-slate-400 font-medium">
+                <span>Texto Integral do Termo de Licenciamento (LICENSE)</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(LICENSE_FULL_TEXT);
+                    setCopiedLicenseText(true);
+                    setTimeout(() => setCopiedLicenseText(false), 2000);
+                  }}
+                  className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 cursor-pointer text-xs"
+                >
+                  {copiedLicenseText ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-emerald-400">Copiado!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copiar Termo</span>
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre
+                className={`p-3 rounded-lg border font-mono text-[10px] leading-relaxed max-h-40 overflow-y-auto whitespace-pre-wrap select-all ${
+                  theme === 'dark'
+                    ? 'bg-slate-950 text-slate-300 border-slate-800'
+                    : 'bg-slate-100 text-slate-800 border-slate-300'
+                }`}
+              >
+                {LICENSE_FULL_TEXT}
+              </pre>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div
+            className={`px-6 py-3 border-t flex items-center justify-between ${
+              theme === 'dark' ? 'bg-slate-950/70 border-slate-800' : 'bg-slate-50 border-slate-200'
+            }`}
+          >
+            <div className="text-[11px] text-slate-500">
+              RIDIS · Registo de Direitos de Autor 2026
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowLicenseModal(false)}
+              className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold cursor-pointer"
+            >
+              Fechar
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Render Login screen if logged out
   if (!currentUser) {
     return (
@@ -1419,10 +1682,24 @@ export default function App() {
           </div>
         </div>
 
-        <footer className="relative z-10 text-center py-4 text-xs text-slate-500">
-          <strong className="text-slate-400">DGLAB</strong> · Direção-Geral do Livro, dos Arquivos e das Bibliotecas ·
-          Serviços Centrais
+        <footer className="relative z-10 text-center py-4 px-4 text-xs text-slate-500 space-y-1.5">
+          <div>
+            <strong className="text-slate-400">DGLAB</strong> · Direção-Geral do Livro, dos Arquivos e das Bibliotecas · Serviços Centrais
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400">
+            <span>© 2026 <strong>José Miguel Magalhães</strong> · Licença Exclusiva DGLAB</span>
+            <span>•</span>
+            <button
+              type="button"
+              onClick={() => setShowLicenseModal(true)}
+              className="text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer inline-flex items-center gap-1"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Direitos de Autor & Termos de Uso
+            </button>
+          </div>
         </footer>
+        {renderLicenseModal()}
       </div>
     );
   }
@@ -3306,6 +3583,62 @@ export default function App() {
                 </table>
               </div>
             </div>
+
+            {/* Panel 5: Direitos de Autor, Propriedade Intelectual & Licença */}
+            <div
+              className={`rounded-2xl border p-5 shadow-sm space-y-4 ${
+                theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/30">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold">Direitos de Autor e Proteção Jurídica (Copyright)</h3>
+                    <p className="text-xs text-slate-400">
+                      Registo formal de propriedade intelectual e regime de exclusividade institucional
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLicenseModal(true)}
+                  className="px-3 py-1.5 rounded-lg border border-blue-700/60 bg-blue-950/40 hover:bg-blue-900/60 text-blue-300 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  Ver Termo de Licenciamento Completo
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                <div className={`p-3.5 rounded-xl border ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Autor e Titular dos Direitos</div>
+                  <div className="text-sm font-bold text-blue-400 mt-1">José Miguel Magalhães</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Todos os direitos reservados © 2026</div>
+                </div>
+                <div className={`p-3.5 rounded-xl border ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Entidade Licenciada Exclusiva</div>
+                  <div className="text-sm font-bold text-emerald-400 mt-1">DGLAB</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Direção-Geral do Livro, dos Arquivos e das Bibliotecas</div>
+                </div>
+                <div className={`p-3.5 rounded-xl border ${theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">Finalidade & Âmbito de Uso</div>
+                  <div className="text-xs font-bold text-amber-300 mt-1">Uso Estrito e Exclusivo na DGLAB</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Não pode ser usada para mais nenhum fim</div>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg border border-slate-800 bg-slate-950/40 text-xs text-slate-400 flex items-start gap-2">
+                <span className="text-blue-400 font-bold shrink-0 mt-0.5">ℹ️</span>
+                <span>
+                  Protegido pelo <strong>Código do Direito de Autor e dos Direitos Conexos</strong> (Decreto-Lei n.º 63/85) e pelo{' '}
+                  <strong>Regime Jurídico da Proteção de Programas de Computador</strong> (Decreto-Lei n.º 252/94).
+                  Licença estritamente intransmissível. Qualquer utilização, cópia, descompilação ou distribuição fora da DGLAB é ilícita.
+                </span>
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -3958,14 +4291,31 @@ export default function App() {
 
       {/* Quiet Institutional Footer */}
       <footer
-        className={`border-t py-4 px-6 text-xs flex flex-wrap items-center justify-between gap-2 ${
-          theme === 'dark' ? 'border-slate-900 text-slate-500' : 'border-slate-200 text-slate-500'
+        className={`border-t py-4 px-6 text-xs flex flex-wrap items-center justify-between gap-3 ${
+          theme === 'dark' ? 'border-slate-900 text-slate-400' : 'border-slate-200 text-slate-600'
         }`}
       >
-        <div>
+        <div className="flex flex-wrap items-center gap-2">
           <strong>RIDIS · DGLAB</strong> — Direção-Geral do Livro, dos Arquivos e das Bibliotecas
+          <span className="hidden sm:inline text-slate-600">|</span>
+          <span>© 2026 <strong>José Miguel Magalhães</strong>. Todos os direitos reservados.</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+            Licença Exclusiva DGLAB
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowLicenseModal(true)}
+            className="text-blue-400 hover:text-blue-300 underline text-xs cursor-pointer flex items-center gap-1"
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Aviso Legal & Direitos
+          </button>
         </div>
       </footer>
+
+      {renderLicenseModal()}
     </div>
   );
 }
