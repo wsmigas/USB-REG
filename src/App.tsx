@@ -28,6 +28,7 @@ import {
   X,
   ExternalLink,
   Key,
+  ArrowUp,
   ArrowUpCircle,
   ArrowDownCircle,
   FileSpreadsheet,
@@ -149,6 +150,21 @@ export default function App() {
 
   // Copy feedback state
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Scroll to top button visibility state
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setShowScrollTop(window.scrollY > 300);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   // Inline delete confirmation state
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -4525,6 +4541,23 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
           </button>
         </div>
       </footer>
+
+      {/* Botão Flutuante Voltar ao Topo (Canto Inferior Direito) */}
+      {showScrollTop && (
+        <button
+          type="button"
+          onClick={scrollToTop}
+          title="Voltar ao topo da página"
+          aria-label="Voltar ao topo"
+          className={`fixed bottom-6 right-6 z-40 p-3 rounded-full shadow-2xl transition-all duration-300 flex items-center justify-center cursor-pointer border group hover:scale-110 active:scale-95 ${
+            theme === 'dark'
+              ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-400/50 shadow-blue-950/80'
+              : 'bg-blue-600 hover:bg-blue-700 text-white border-blue-400 shadow-blue-500/40'
+          }`}
+        >
+          <ArrowUp className="w-5 h-5 transition-transform group-hover:-translate-y-0.5" />
+        </button>
+      )}
 
       {renderLicenseModal()}
     </div>
