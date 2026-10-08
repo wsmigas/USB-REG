@@ -1054,13 +1054,16 @@ export default function App() {
   const handleBatchMigrateReports = async (fileList: FileList | null) => {
     if (!currentUser?.is_admin || !fileList || fileList.length === 0) return;
 
-    const htmlFiles = Array.from(fileList).filter((f) => {
+    const reportFiles = Array.from(fileList).filter((f) => {
       const lower = f.name.toLowerCase();
-      return (lower.endsWith('.html') || lower.endsWith('.htm')) && !f.name.startsWith('.');
+      return (
+        (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt') || lower.endsWith('.csv')) &&
+        !f.name.startsWith('.')
+      );
     });
 
-    if (htmlFiles.length === 0) {
-      showFlash('Nenhum ficheiro .html ou .htm encontrado na seleção.', 'warning');
+    if (reportFiles.length === 0) {
+      showFlash('Nenhum ficheiro de relatório (.html, .htm, .txt, .csv) encontrado na seleção.', 'warning');
       return;
     }
 
@@ -1073,8 +1076,8 @@ export default function App() {
     try {
       const chunkSize = Math.floor(1.5 * 1024 * 1024); // 1.5 MB raw per chunk + gzip compression
 
-      for (let i = 0; i < htmlFiles.length; i++) {
-        const file = htmlFiles[i];
+      for (let i = 0; i < reportFiles.length; i++) {
+        const file = reportFiles[i];
         const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
         const uploadId = `${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -1083,7 +1086,7 @@ export default function App() {
           const pct = Math.round(((chunkIndex + 1) / totalChunks) * 100);
           setMigrationReportsProgress({
             current: i + 1,
-            total: htmlFiles.length,
+            total: reportFiles.length,
             filename: file.name,
             pct,
           });
@@ -1150,15 +1153,15 @@ export default function App() {
       }
 
       showFlash(
-        `Migração de relatórios concluída: ${migratedCount}/${htmlFiles.length} ficheiros .HTML transferidos (${linkedCount} associados a discos, ${totalTifCount.toLocaleString(
+        `Migração de relatórios concluída: ${migratedCount}/${reportFiles.length} ficheiros transferidos (${linkedCount} associados a discos, ${totalTifCount.toLocaleString(
           'pt-PT'
-        )} matrizes .TIF indexadas)${errorsCount > 0 ? ` · ${errorsCount} com erro` : ''}!`,
+        )} matrizes/documentos indexados)${errorsCount > 0 ? ` · ${errorsCount} com erro` : ''}!`,
         errorsCount > 0 && migratedCount === 0 ? 'danger' : 'success'
       );
       fetchDbAdminStatus();
       fetchDiscos();
     } catch {
-      showFlash('Erro durante a migração em lote de relatórios Snap2HTML.', 'danger');
+      showFlash('Erro durante a migração em lote de relatórios (.html, .txt, .csv).', 'danger');
     } finally {
       setMigratingReports(false);
       setMigrationReportsProgress(null);
@@ -3170,7 +3173,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
               </div>
             </div>
 
-            {/* Panel 3: Migração em Lote de Relatórios Snap2HTML (relatorios/*.html) da Base Antiga */}
+            {/* Panel 3: Migração em Lote de Relatórios (.html, .htm, .txt, .csv) da Pasta relatorios/ */}
             <div
               className={`p-5 rounded-xl border space-y-5 ${
                 theme === 'dark' ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200'
@@ -3180,29 +3183,31 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 <div>
                   <h2 className="text-base font-bold flex items-center gap-2">
                     <FolderOpen className="w-4 h-4 text-[#6ea8fe]" />
-                    3. Migração da Pasta de Relatórios Antiga (<span className="font-mono">relatorios/*.html</span>)
+                    3. Migração da Pasta de Relatórios Antiga (<span className="font-mono">relatorios/*</span> .html, .txt, .csv)
                   </h2>
                   <p className={`text-xs mt-1 max-w-3xl ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                     Depois de migrar a base de dados (<span className="font-mono">gestao_discos.db</span> ou{' '}
-                    <span className="font-mono">.csv</span>), carregue aqui todos os relatórios Snap2HTML da pasta{' '}
-                    <span className="font-mono">relatorios/</span> antiga de uma só vez. O sistema preserva o nome
-                    original de cada ficheiro, liga-o automaticamente ao respetivo disco e indexa todas as matrizes{' '}
+                    <span className="font-mono">.csv</span>), carregue aqui todos os relatórios da pasta{' '}
+                    <span className="font-mono">relatorios/</span> antiga de uma só vez (relatórios Snap2HTML{' '}
+                    <span className="font-mono">.html</span>, relatórios <span className="font-mono">.txt</span> ou listagens{' '}
+                    <span className="font-mono">.csv</span>). O sistema preserva o nome original de cada ficheiro, liga-o
+                    automaticamente ao respetivo disco e indexa todos os códigos de referência e matrizes{' '}
                     <span className="font-mono">.TIF</span>.
                   </p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* Select multiple .html files */}
+                  {/* Select multiple report files */}
                   <label
                     className={`px-3.5 py-2 rounded-lg bg-[#0d6efd] hover:bg-blue-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                       migratingReports ? 'opacity-50 pointer-events-none' : ''
                     }`}
                   >
                     <Upload className="w-3.5 h-3.5" />
-                    Selecionar Ficheiros .HTML (Lote)
+                    Selecionar Relatórios em Lote (.html, .txt, .csv)
                     <input
                       type="file"
-                      accept=".html,.htm"
+                      accept=".html,.htm,.txt,.csv"
                       multiple
                       disabled={migratingReports}
                       onChange={(e) => {
@@ -3302,12 +3307,11 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                       {dbAdminStatus.migration_diagnostics.linked_ok_count} discos com relatório OK
                     </div>
                     <div className="text-[11px] text-slate-400 mt-0.5">
-                      Ficheiro <span className="font-mono">.html</span> presente em{' '}
-                      <span className="font-mono">relatorios/</span>
+                      Ficheiro presente em <span className="font-mono">relatorios/</span>
                     </div>
                   </div>
 
-                  {/* Box 2: Missing HTML files referenced by DB */}
+                  {/* Box 2: Missing report files referenced by DB */}
                   <div
                     className={`p-3.5 rounded-lg border ${
                       dbAdminStatus.migration_diagnostics.missing_reports.length > 0
@@ -3317,7 +3321,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                         : 'bg-slate-50 border-slate-200'
                     }`}
                   >
-                    <div className="text-xs text-slate-400">Relatórios Aguardando Upload (.html em falta)</div>
+                    <div className="text-xs text-slate-400">Relatórios Aguardando Upload (em falta)</div>
                     <div
                       className={`text-lg font-bold font-mono mt-0.5 ${
                         dbAdminStatus.migration_diagnostics.missing_reports.length > 0
@@ -3334,7 +3338,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                     </div>
                   </div>
 
-                  {/* Box 3: Unlinked HTML files in relatorios/ */}
+                  {/* Box 3: Unlinked report files in relatorios/ */}
                   <div
                     className={`p-3.5 rounded-lg border ${
                       dbAdminStatus.migration_diagnostics.unlinked_reports.length > 0
@@ -3344,7 +3348,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                         : 'bg-slate-50 border-slate-200'
                     }`}
                   >
-                    <div className="text-xs text-slate-400">Ficheiros .HTML na Pasta Sem Disco Associado</div>
+                    <div className="text-xs text-slate-400">Ficheiros na Pasta Sem Disco Associado</div>
                     <div
                       className={`text-lg font-bold font-mono mt-0.5 ${
                         dbAdminStatus.migration_diagnostics.unlinked_reports.length > 0
@@ -3361,17 +3365,17 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 </div>
               )}
 
-              {/* Detail List 1: Missing Reports (Referenced in DB, waiting for HTML upload) */}
+              {/* Detail List 1: Missing Reports (Referenced in DB, waiting for report upload) */}
               {dbAdminStatus?.migration_diagnostics &&
                 dbAdminStatus.migration_diagnostics.missing_reports.length > 0 && (
                   <div className="p-4 rounded-xl border border-amber-700/60 bg-amber-950/20 space-y-2">
                     <div className="text-xs font-bold text-amber-300">
-                      Registos que já têm relatório definido na base de dados mas cujo ficheiro .HTML ainda não foi
+                      Registos que já têm relatório definido na base de dados mas cujo ficheiro ainda não foi
                       carregado ({dbAdminStatus.migration_diagnostics.missing_reports.length}):
                     </div>
                     <p className="text-[11px] text-amber-200/80">
                       Basta usar o botão <strong>&quot;Selecionar Pasta relatorios/ Inteira&quot;</strong> ou{' '}
-                      <strong>&quot;Selecionar Ficheiros .HTML (Lote)&quot;</strong> acima e escolher estes ficheiros — a
+                      <strong>&quot;Selecionar Relatórios em Lote (.html, .txt, .csv)&quot;</strong> acima e escolher estes ficheiros — a
                       ligação fica imediatamente ativa:
                     </p>
                     <div className="max-h-44 overflow-y-auto divide-y divide-amber-800/30 text-xs pt-1">
@@ -3392,7 +3396,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                   </div>
                 )}
 
-              {/* Detail List 2: Unlinked HTML files in relatorios/ (Allow manual 1-click association to a disk) */}
+              {/* Detail List 2: Unlinked report files in relatorios/ (Allow manual 1-click association to a disk) */}
               {dbAdminStatus?.migration_diagnostics &&
                 dbAdminStatus.migration_diagnostics.unlinked_reports.length > 0 && (
                   <div
@@ -3401,7 +3405,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                     }`}
                   >
                     <div className="text-xs font-bold text-blue-400">
-                      Ficheiros .HTML na pasta <span className="font-mono">relatorios/</span> sem disco atribuído (
+                      Ficheiros na pasta <span className="font-mono">relatorios/</span> sem disco atribuído (
                       {dbAdminStatus.migration_diagnostics.unlinked_reports.length}):
                     </div>
                     <div className="max-h-56 overflow-y-auto divide-y divide-slate-800 text-xs">
@@ -4317,7 +4321,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
             <div className="px-6 py-4 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-base font-bold font-mono">
-                  Relatório Snap2HTML — {inspectModalDisco.id_disco}
+                  Relatório do Disco — {inspectModalDisco.id_disco}
                 </h2>
                 <p className="text-xs text-slate-400">
                   {inspectModalDisco.arquivo} · Ticket:{' '}
@@ -4453,7 +4457,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                   />
                 ) : (
                   <div className="p-12 text-center text-sm text-slate-400">
-                    Este disco não tem relatório Snap2HTML anexado.
+                    Este disco não tem relatório anexado.
                   </div>
                 )}
               </div>

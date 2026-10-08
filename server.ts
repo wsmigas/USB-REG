@@ -1495,7 +1495,7 @@ app.post('/api/discos', (req, res) => {
   uploadReport.single('relatorio')(req, res, (err) => {
     if (err) {
       if (err.message === 'ERRO_EXTENSAO') {
-        res.status(400).json({ error: 'O relatório tem de ser um ficheiro .html ou .htm.' });
+        res.status(400).json({ error: 'O relatório tem de ser um ficheiro .html, .htm, .txt ou .csv.' });
         return;
       }
       res.status(400).json({ error: `Erro no upload do relatório: ${err.message}` });
@@ -1622,7 +1622,7 @@ app.put('/api/discos/:id', (req, res) => {
   uploadReport.single('relatorio')(req, res, (err) => {
     if (err) {
       if (err.message === 'ERRO_EXTENSAO') {
-        res.status(400).json({ error: 'O relatório tem de ser um ficheiro .html ou .htm.' });
+        res.status(400).json({ error: 'O relatório tem de ser um ficheiro .html, .htm, .txt ou .csv.' });
         return;
       }
       res.status(400).json({ error: `Erro no upload do relatório: ${err.message}` });
@@ -1663,11 +1663,17 @@ app.delete('/api/discos/:id', (req, res) => {
   }
 });
 
-// List all Snap2HTML reports in ./relatorios folder and their indexing status
+// List all reports (.html, .htm, .txt, .csv) in ./relatorios folder and their indexing status
 app.get('/api/relatorios', (_req, res) => {
   const filesOnDisk = fs
     .readdirSync(RELATORIOS_DIR)
-    .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+    .filter((f) => {
+      const lower = f.toLowerCase();
+      return (
+        (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt') || lower.endsWith('.csv')) &&
+        !f.startsWith('.tmp_')
+      );
+    });
 
   const discosRows = db
     .prepare(
@@ -2278,7 +2284,13 @@ function autoLinkAndIndexReports(forceReindexAll = false): {
 
   const htmlFiles = fs
     .readdirSync(RELATORIOS_DIR)
-    .filter((f) => (f.toLowerCase().endsWith('.html') || f.toLowerCase().endsWith('.htm')) && !f.startsWith('.tmp_'));
+    .filter((f) => {
+      const lower = f.toLowerCase();
+      return (
+        (lower.endsWith('.html') || lower.endsWith('.htm') || lower.endsWith('.txt') || lower.endsWith('.csv')) &&
+        !f.startsWith('.tmp_')
+      );
+    });
 
   const lowerToActual = new Map<string, string>();
   for (const f of htmlFiles) {
@@ -3268,8 +3280,13 @@ app.post('/api/admin/db/migrate-report-chunk', (req, res) => {
 
     const cleanOrigName = path.basename(String(originalName || '').replace(/\\/g, '/')).trim();
     const lowerName = cleanOrigName.toLowerCase();
-    if (!lowerName.endsWith('.html') && !lowerName.endsWith('.htm')) {
-      res.status(400).json({ error: 'Apenas são permitidos relatórios Snap2HTML (.html ou .htm).' });
+    if (
+      !lowerName.endsWith('.html') &&
+      !lowerName.endsWith('.htm') &&
+      !lowerName.endsWith('.txt') &&
+      !lowerName.endsWith('.csv')
+    ) {
+      res.status(400).json({ error: 'Apenas são permitidos relatórios (.html, .htm, .txt ou .csv).' });
       return;
     }
 
