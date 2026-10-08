@@ -1,0 +1,27 @@
+# ==============================================================================
+# RIDIS — Sistema de Gestão de Discos USB e Preservação Digital (DGLAB)
+# CONFIGURAÇÃO DE VARIÁVEIS DE AMBIENTE DE PRODUÇÃO (.env)
+# Conformidade: ISO/IEC 27001:2022 (A.8.24, A.8.28) & Diretiva NIS 2
+# Permissões do ficheiro: chmod 600 /var/www/ridis/.env (Proprietário: ridis:ridis)
+# ==============================================================================
+
+# Ambiente de Execução
+NODE_ENV=production
+
+# Porta do Serviço Interno (O Nginx escuta 80/443 e faz proxy para esta porta)
+APP_PORT=3005
+
+# Limite de Tamanho de Uploads (em MB)
+MAX_UPLOAD_SIZE_MB=50
+
+# Chave / Segredo de Cifra de Sessões e Tokens (Substituir por 64 caracteres hexadecimais aleatórios)
+# Gerar com: openssl rand -hex 32
+SESSION_SECRET=e7b4f8a129d5c4e3a091284756bfcd32e847192837465abcde1234567890feda
+
+# Caminhos de Armazenamento no Sistema Operativo
+DB_PATH=/var/www/ridis/gestao_discos.db
+RELATORIOS_DIR=/var/www/ridis/relatorios
+BACKUPS_DIR=/var/www/ridis/backups
+
+# Políticas de Backup e Retenção de Dados (Dias a manter)
+BACKUP_RETENTION_DAYS=90

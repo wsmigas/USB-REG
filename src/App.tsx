@@ -1468,6 +1468,67 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
               </div>
             </div>
 
+            {/* ISO 27001 / NIS 2 Technical Specification PDF Banner */}
+            <div
+              className={`p-4 rounded-xl border space-y-3 ${
+                theme === 'dark'
+                  ? 'bg-gradient-to-r from-blue-950/50 via-slate-900 to-slate-950 border-blue-800/50'
+                  : 'bg-gradient-to-r from-blue-50 via-white to-blue-50 border-blue-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white">
+                    ISO 27001 / NIS II
+                  </span>
+                  <span className="font-bold text-xs text-blue-300">
+                    Especificação Técnica Oficial de Implantação (PDF)
+                  </span>
+                </div>
+                <a
+                  href="/api/documentacao-pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                  download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Descarregar PDF
+                </a>
+              </div>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Documento técnico homologado contendo: pacotes de software a instalar no SO (Ubuntu/Debian/Node 22 LTS),
+                motor SQLite com script DDL completo, servidor Web Nginx com TLS 1.3/HSTS, mapeamento integral de ficheiros
+                com permissões restritas POSIX (chmod 640/750) e unidade de serviço systemd com sandboxing.
+              </p>
+              <div className="flex flex-wrap gap-2 pt-1 text-[11px]">
+                <a
+                  href="/api/implantacao/script-bd"
+                  download="schema_criacao_bd.sql"
+                  className="px-2.5 py-1 rounded border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center gap-1"
+                >
+                  <Database className="w-3 h-3 text-emerald-400" />
+                  Script Criar BD (.sql)
+                </a>
+                <a
+                  href="/api/implantacao/nginx-conf"
+                  download="nginx_ridis.conf"
+                  className="px-2.5 py-1 rounded border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center gap-1"
+                >
+                  <FileText className="w-3 h-3 text-sky-400" />
+                  Configuração Nginx (.conf)
+                </a>
+                <a
+                  href="/api/implantacao/service"
+                  download="ridis.service"
+                  className="px-2.5 py-1 rounded border border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center gap-1"
+                >
+                  <HardDrive className="w-3 h-3 text-amber-400" />
+                  Serviço Systemd (.service)
+                </a>
+              </div>
+            </div>
+
             {/* Critical Restriction Callout */}
             <div className="p-4 rounded-xl border border-red-500/30 bg-red-950/20 space-y-1.5">
               <div className="flex items-center gap-2 font-bold text-red-300 text-xs">
@@ -1689,13 +1750,24 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
           <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400">
             <span>© 2026 <strong>José Miguel Magalhães</strong> · Licença Exclusiva DGLAB</span>
             <span>•</span>
+            <a
+              href="/api/documentacao-pdf"
+              target="_blank"
+              rel="noreferrer"
+              download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
+              className="text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer inline-flex items-center gap-1"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Doc. Técnico 27001/NIS II (PDF)
+            </a>
+            <span>•</span>
             <button
               type="button"
               onClick={() => setShowLicenseModal(true)}
               className="text-blue-400 hover:text-blue-300 underline font-medium cursor-pointer inline-flex items-center gap-1"
             >
               <ShieldCheck className="w-3.5 h-3.5" />
-              Direitos de Autor & Termos de Uso
+              Direitos de Autor & Termos
             </button>
           </div>
         </footer>
@@ -3639,6 +3711,181 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 </span>
               </div>
             </div>
+
+            {/* Panel 6: Convergência Normativa ISO/IEC 27001 & NIS II — Especificação Técnica de Implantação */}
+            <div
+              className={`rounded-2xl border p-5 shadow-sm space-y-4 ${
+                theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
+                    <Database className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold">Convergência Normativa ISO/IEC 27001:2022 & Diretiva NIS 2</h3>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600/30 text-blue-300 border border-blue-500/40">
+                        Homologado DGLAB
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Roteiro de implantação técnica: pacotes de software, base de dados SQLite (WAL), web server Nginx, ficheiros e configurações
+                    </p>
+                  </div>
+                </div>
+
+                <a
+                  href="/api/documentacao-pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                  download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  Descarregar Especificação Técnica em PDF
+                </a>
+              </div>
+
+              {/* 5 Technical Cards according to requirements */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                {/* 1. Pacotes de Software */}
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 ${
+                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-blue-400">1. Pacotes de Software</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">APT / Node 22</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Ubuntu 24.04 LTS / Debian 12. Runtime <strong>Node.js 22 LTS</strong> com motor SQLite nativo,
+                    utilitários do sistema (sqlite3, libsqlite3-dev, ufw, fail2ban, logrotate, rsyslog, openssl) e pacotes npm declarados em package.json.
+                  </p>
+                </div>
+
+                {/* 2. Base de Dados SQLite */}
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 ${
+                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-emerald-400">2. Base de Dados & Script DDL</span>
+                    <a
+                      href="/api/implantacao/script-bd"
+                      download="schema_criacao_bd.sql"
+                      className="text-[10px] text-emerald-400 hover:underline flex items-center gap-0.5"
+                    >
+                      <Download className="w-2.5 h-2.5" /> .sql
+                    </a>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Motor <strong>SQLite 3 em modo WAL</strong> (Write-Ahead Logging), integridade referencial, índices otimizados,
+                    utilizador administrador inicial com password cifrada. Recomenda-se partição cifrada via LUKS (ISO 27001 A.8.24).
+                  </p>
+                </div>
+
+                {/* 3. Web Server Nginx */}
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 ${
+                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-sky-400">3. Web Server Nginx</span>
+                    <a
+                      href="/api/implantacao/nginx-conf"
+                      download="nginx_ridis.conf"
+                      className="text-[10px] text-sky-400 hover:underline flex items-center gap-0.5"
+                    >
+                      <Download className="w-2.5 h-2.5" /> .conf
+                    </a>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Reverse proxy para porta 3005 com <strong>TLS 1.3 obrigatório</strong>, cabeçalhos de segurança estritos
+                    (HSTS, CSP, X-Frame-Options, X-Content-Type), rate limiting anti-força bruta em /api/login e logs de auditoria NIS 2.
+                  </p>
+                </div>
+
+                {/* 4. Conjunto de Ficheiros */}
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 ${
+                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-purple-400">4. Conjunto de Ficheiros</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-800 text-slate-400">chmod 640/750</span>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Mapeamento completo: server.ts, package.json, gestao_discos.db*, diretórios relatorios/ e backups/,
+                    scripts em deploy/ e UI em src/. Permissões POSIX restritas sob utilizador sem root (ridis:ridis).
+                  </p>
+                </div>
+
+                {/* 5. Configurações a Aplicar */}
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 ${
+                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-amber-400">5. Configurações & Systemd</span>
+                    <a
+                      href="/api/implantacao/service"
+                      download="ridis.service"
+                      className="text-[10px] text-amber-400 hover:underline flex items-center gap-0.5"
+                    >
+                      <Download className="w-2.5 h-2.5" /> .service
+                    </a>
+                  </div>
+                  <p className="text-slate-400 text-[11px] leading-relaxed">
+                    Unidade systemd com <strong>sandboxing rigoroso</strong> (NoNewPrivileges, ProtectSystem=strict, PrivateTmp),
+                    política de firewall UFW, cronjob diário de backup gzip e protocolo de resposta a incidentes (24h/72h CNCS).
+                  </p>
+                </div>
+
+                {/* 6. Acesso Rápido a Ficheiros de Implantação */}
+                <div
+                  className={`p-3.5 rounded-xl border space-y-2 flex flex-col justify-between ${
+                    theme === 'dark' ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'
+                  }`}
+                >
+                  <div>
+                    <div className="font-bold text-slate-300">Descarregar Pacote Completo</div>
+                    <p className="text-slate-400 text-[11px] mt-1">
+                      Ficheiros prontos a copiar para o servidor de produção da DGLAB (/var/www/ridis e /etc/):
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <a
+                      href="/api/implantacao/script-bd"
+                      download="schema_criacao_bd.sql"
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-emerald-400 text-[10px] font-mono border border-slate-700"
+                    >
+                      schema.sql
+                    </a>
+                    <a
+                      href="/api/implantacao/nginx-conf"
+                      download="nginx_ridis.conf"
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-sky-400 text-[10px] font-mono border border-slate-700"
+                    >
+                      nginx.conf
+                    </a>
+                    <a
+                      href="/api/implantacao/service"
+                      download="ridis.service"
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-400 text-[10px] font-mono border border-slate-700"
+                    >
+                      ridis.service
+                    </a>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </main>
@@ -4304,6 +4551,17 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
           <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
             Licença Exclusiva DGLAB
           </span>
+          <a
+            href="/api/documentacao-pdf"
+            target="_blank"
+            rel="noreferrer"
+            download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
+            className="text-blue-400 hover:text-blue-300 underline text-xs cursor-pointer flex items-center gap-1"
+            title="Descarregar Especificação Técnica de Implantação e Convergência Normativa 27001 / NIS II (PDF)"
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Doc. Técnico 27001/NIS II (PDF)
+          </a>
           <button
             type="button"
             onClick={() => setShowLicenseModal(true)}

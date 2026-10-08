@@ -1,0 +1,62 @@
+# ==============================================================================
+# RIDIS — Sistema de Gestão de Discos USB, Matrizes e Relatórios
+# UNIDADE DE SERVIÇO SYSTEMD COM SANDBOXING E ISOLAMENTO DE SEGURANÇA
+# Conformidade: ISO/IEC 27001:2022 (A.8.2, A.8.9) & Diretiva NIS 2 (Art. 21.º)
+# Localização recomendada no SO: /etc/systemd/system/ridis.service
+# ==============================================================================
+
+[Unit]
+Description=RIDIS — Sistema de Gestão de Discos USB e Preservação Digital (DGLAB)
+Documentation=https://ridis.dglab.gov.pt
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# Princípio do Menor Privilégio: Execução sob utilizador de serviço sem privilégios de root
+User=ridis
+Group=ridis
+
+WorkingDirectory=/var/www/ridis
+Environment=NODE_ENV=production
+Environment=APP_PORT=3005
+EnvironmentFile=-/var/www/ridis/.env
+
+# Comando de Execução (via Node.js nativo com suporte a tsx ou build compilado)
+ExecStart=/usr/bin/node /var/www/ridis/node_modules/.bin/tsx /var/www/ridis/server.ts
+# Em caso de build estático previamente compilado:
+# ExecStart=/usr/bin/node /var/www/ridis/server.js
+
+# Políticas de Continuidade de Negócio e Auto-Recuperação (NIS 2)
+Restart=always
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# Limites de Recursos de Sistema (Prevenção de Esgotamento e DoS)
+LimitNOFILE=65535
+TimeoutStopSec=30s
+
+# Sandboxing de Segurança do Sistema de Ficheiros (ISO/IEC 27001 A.8.9)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+
+# Diretórios com permissão de escrita estrita (apenas base de dados, uploads e backups)
+ReadWritePaths=/var/www/ridis/gestao_discos.db /var/www/ridis/gestao_discos.db-wal /var/www/ridis/gestao_discos.db-shm /var/www/ridis/relatorios /var/www/ridis/backups
+
+# Logging para systemd-journald (Encaminhável para SIEM institucional)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ridis-dglab
+
+[Install]
+WantedBy=multi-user.target

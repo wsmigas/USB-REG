@@ -866,6 +866,89 @@ app.get('/api/licenca', (_req, res) => {
   });
 });
 
+// Endpoint para download da Especificação Técnica em PDF (Convergência ISO 27001 & NIS 2)
+app.get('/api/documentacao-pdf', (_req, res) => {
+  const pdfName = 'RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf';
+  const pdfPathRoot = path.join(BASE_DIR, pdfName);
+  const pdfPathPublic = path.join(BASE_DIR, 'public', pdfName);
+  const targetPath = fs.existsSync(pdfPathPublic) ? pdfPathPublic : pdfPathRoot;
+
+  if (fs.existsSync(targetPath)) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${pdfName}"`);
+    return res.sendFile(targetPath);
+  }
+
+  res.status(404).json({ error: 'Ficheiro PDF ainda não gerado no servidor.' });
+});
+
+// Endpoint com o inventário dos artefactos de implantação e segurança
+app.get('/api/implantacao/arquivos', (_req, res) => {
+  res.json({
+    normas: ['ISO/IEC 27001:2022', 'Diretiva NIS 2 (UE 2022/2555)'],
+    aplicacao: 'RIDIS — Sistema de Gestão de Discos USB e Preservação Digital',
+    autor: 'José Miguel Magalhães',
+    organizacao: 'DGLAB',
+    pdf_url: '/api/documentacao-pdf',
+    ficheiros: [
+      {
+        tipo: 'PDF Oficial',
+        nome: 'RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf',
+        descricao: 'Documento PDF com convergência 27001/NIS 2 e especificações completas',
+        rota_download: '/api/documentacao-pdf'
+      },
+      {
+        tipo: 'Script SQL BD',
+        nome: 'schema_criacao_bd.sql',
+        descricao: 'Script DDL de criação e inicialização da base de dados SQLite (WAL mode)',
+        rota_download: '/api/implantacao/script-bd'
+      },
+      {
+        tipo: 'Configuração Web Server',
+        nome: 'nginx_ridis.conf',
+        descricao: 'Ficheiro de configuração Nginx com TLS 1.3, HSTS, CSP e Rate Limiting',
+        rota_download: '/api/implantacao/nginx-conf'
+      },
+      {
+        tipo: 'Serviço Systemd',
+        nome: 'ridis.service',
+        descricao: 'Unidade de serviço systemd com isolamento e sandboxing (menor privilégio)',
+        rota_download: '/api/implantacao/service'
+      }
+    ]
+  });
+});
+
+app.get('/api/implantacao/script-bd', (_req, res) => {
+  const filePath = path.join(BASE_DIR, 'deploy', 'schema_criacao_bd.sql');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="schema_criacao_bd.sql"');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('Script SQL não encontrado.');
+});
+
+app.get('/api/implantacao/nginx-conf', (_req, res) => {
+  const filePath = path.join(BASE_DIR, 'deploy', 'nginx_ridis.conf');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="nginx_ridis.conf"');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('Configuração Nginx não encontrada.');
+});
+
+app.get('/api/implantacao/service', (_req, res) => {
+  const filePath = path.join(BASE_DIR, 'deploy', 'ridis.service');
+  if (fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="ridis.service"');
+    return res.sendFile(filePath);
+  }
+  res.status(404).send('Ficheiro de serviço systemd não encontrado.');
+});
+
 // Download a sample Snap2HTML file so users can test importing a new report
 app.get('/api/relatorios/exemplo-snap2html', (_req, res) => {
   const ts = Math.floor(Date.now() / 1000);
