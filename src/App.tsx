@@ -1706,7 +1706,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
             <strong className="text-slate-400">DGLAB</strong> · Direção-Geral do Livro, dos Arquivos e das Bibliotecas · Serviços Centrais
           </div>
           <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-slate-400">
-            <span>© 2026 <strong>José Miguel Magalhães</strong> · Licença Exclusiva DGLAB</span>
+            <span>© 2026 <strong>JMM</strong> · Licença Exclusiva DGLAB</span>
             <span>•</span>
             <button
               type="button"
@@ -4529,7 +4529,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
         <div className="flex flex-wrap items-center gap-2">
           <strong>RIDIS · DGLAB</strong> — Direção-Geral do Livro, dos Arquivos e das Bibliotecas
           <span className="hidden sm:inline text-slate-600">|</span>
-          <span>© 2026 <strong>José Miguel Magalhães</strong>. Todos os direitos reservados.</span>
+          <span>© 2026 <strong>JMM</strong>. Todos os direitos reservados.</span>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[11px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
