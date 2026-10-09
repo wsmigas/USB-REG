@@ -2750,12 +2750,11 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
               <div>
                 <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2.5">
                   <Database className="w-6 h-6 text-blue-500" />
-                  Administração da Base de Dados Local — Backup e Restauro
+                  Administração da Base de Dados RIDIS — Backup e Restauro
                 </h1>
                 <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                   Módulo exclusivo para o login <span className="font-mono font-semibold">admin</span> · Gestão de cópias de segurança, restauro de snapshots e
-                  manutenção da base de dados SQLite (<span className="font-mono">gestao_discos.db</span>) e relatórios (
-                  <span className="font-mono">relatorios/</span>).
+                  manutenção da base de dados e relatórios.
                 </p>
               </div>
 
@@ -2900,7 +2899,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 <div>
                   <h2 className="text-sm font-bold flex items-center gap-2">
                     <RefreshCw className={`w-4 h-4 text-blue-400 ${gitUpdating ? 'animate-spin' : ''}`} />
-                    Atualização Automática do Site via GitHub (Sem SSH)
+                    Atualização Automática do Site.
                   </h2>
                   <p className={`text-xs mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                     Sincroniza o código com o repositório GitHub e recompila a aplicação mantendo{' '}
@@ -3043,7 +3042,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 <div>
                   <h2 className="text-base font-bold flex items-center gap-2">
                     <RotateCcw className="w-4 h-4 text-amber-400" />
-                    2. Migrar Base Antiga (<span className="font-mono">gestao_discos.db</span>) ou Restaurar Backup
+                    2. Restauro de backups
                   </h2>
                   <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-600'}`}>
                     Carregue o ficheiro <span className="font-mono">gestao_discos.db</span> da sua aplicação antiga (ou um
@@ -3666,46 +3665,27 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                 theme === 'dark' ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
               }`}
             >
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-lg bg-emerald-600/20 text-emerald-400 border border-emerald-500/30">
-                    <Database className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h3 className="text-sm font-bold">Convergência Normativa ISO/IEC 27001:2022 & Diretiva NIS 2</h3>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600/30 text-blue-300 border border-blue-500/40">
-                        /opt/app_usb/ · Porta 3005 Exclusiva
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400">
-                      Arquitetura autónoma na intranet DGLAB: estrutura de ficheiros, pasta central <span className="font-mono text-emerald-400">relatorios/</span> e BD SQLite (WAL)
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <a
-                    href="/api/documentacao-pdf"
-                    target="_blank"
-                    rel="noreferrer"
-                    download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer"
-                    title="Descarregar Especificação Técnica em formato Adobe PDF"
-                  >
-                    <Download className="w-4 h-4" />
-                    Descarregar PDF Oficial
-                  </a>
-                  <a
-                    href="/api/documentacao-docx"
-                    download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx"
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer border border-sky-400/30"
-                    title="Descarregar Manual Técnico em formato Microsoft Word (.docx)"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Descarregar Manual Word (.docx)
-                  </a>
-                </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 pb-1">
+                <a
+                  href="/api/documentacao-pdf"
+                  target="_blank"
+                  rel="noreferrer"
+                  download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.pdf"
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer"
+                  title="Descarregar Especificação Técnica em formato Adobe PDF"
+                >
+                  <Download className="w-4 h-4" />
+                  Descarregar PDF Oficial
+                </a>
+                <a
+                  href="/api/documentacao-docx"
+                  download="RIDIS_Especificacao_Tecnica_ISO27001_NIS2.docx"
+                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-500 hover:to-blue-600 text-white text-xs font-bold flex items-center gap-2 shadow-md transition-all cursor-pointer border border-sky-400/30"
+                  title="Descarregar Manual Técnico em formato Microsoft Word (.docx)"
+                >
+                  <FileText className="w-4 h-4" />
+                  Descarregar Manual Word (.docx)
+                </a>
               </div>
 
               {/* Destaque Central: Pasta relatorios/ onde mais tarde os relatórios terão que ser copiados */}
@@ -3714,7 +3694,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                   <div className="flex items-center gap-2">
                     <FolderOpen className="w-4 h-4 text-emerald-400" />
                     <span className="text-xs font-bold text-emerald-300">
-                      Pasta Central Obrigatória: <code className="font-mono bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-700/60 text-emerald-200">/opt/app_usb/relatorios/</code>
+                      Pasta Central dos relatórios de matrizes: <code className="font-mono bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-700/60 text-emerald-200">/opt/app_usb/relatorios/</code>
                     </span>
                   </div>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
@@ -3746,8 +3726,7 @@ Organização Licenciada: DGLAB (Direção-Geral do Livro, dos Arquivos e das Bi
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-sky-400">1. Servidor na Porta 3005</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-950/60 text-sky-300 border border-sky-800/40">Sem Porta 3000</span>
+                    <span className="font-bold text-sky-400">1. Porta TCP 3005</span>
                   </div>
                   <p className="text-slate-400 text-[11px] leading-relaxed">
                     Operação <strong>exclusiva na porta 3005</strong> para evitar conflitos na intranet da DGLAB. O backend Express serve a interface SPA e a API nativamente sem necessidade de Nginx ou proxy reverso.
